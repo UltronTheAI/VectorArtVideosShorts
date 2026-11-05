@@ -71,10 +71,28 @@ class KokoroEngine:
                 "Kokoro is not installed. Install the local package, PyTorch, soundfile, and espeak-ng; "
                 "see README.md for Windows setup instructions."
             )
+        configured_cache = Path(settings.kokoro_model_dir) if settings.kokoro_model_dir else None
+        configured_has_model = self._cache_contains_model(configured_cache) if configured_cache else False
+        if configured_has_model:
+            os.environ["HF_HOME"] = str(configured_cache)
+        elif configured_cache and self.offline:
+            # Do not hide a working default Hugging Face cache behind an empty
+            # custom directory. The standalone Kokoro setup commonly uses the
+            # default cache under the user's profile.
+            log.warning("KOKORO_MODEL_DIR=%s has no cached %s; using the default Hugging Face cache.", configured_cache, settings.tts_repo_id)
         if self.offline:
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
-        if settings.kokoro_model_dir:
-            os.environ["HF_HOME"] = settings.kokoro_model_dir
+            os.environ["HF_HUB_OFFLINE"] = "1"
+
+    @staticmethod
+    def _cache_contains_model(cache_root: Path | None) -> bool:
+        if not cache_root:
+            return False
+        repo_folder = settings.tts_repo_id.replace("/", "--")
+        candidates = [
+            cache_root / "hub" / f"models--{repo_folder}",
+            cache_root / f"models--{repo_folder}",
+        ]
+        return any(candidate.exists() and any(candidate.rglob("*.json")) for candidate in candidates)
 
     def _cache_path(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> Path:
         payload = {
