@@ -1,11 +1,9 @@
 {
-  "name": "vectorartvideosshorts",
+  "name": "vectorforge",
   "version": "1.0.0",
-  "description": "",
+  "description": "Local AI-powered 2D vector animation video generator",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "scripts": {"typecheck": "tsc --noEmit", "studio": "remotion studio src/remotion/index.ts", "render": "remotion render src/remotion/index.ts VectorForge"},
   "keywords": [],
   "author": "",
   "license": "ISC",

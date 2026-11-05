@@ -1,0 +1,26 @@
+import React from 'react';
+import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+
+type Props = {children?: React.ReactNode; x?: number; y?: number; color?: string; opacity?: number; scale?: number};
+export const AnimatedText: React.FC<Props & {text?: string; size?: number}> = ({text, children, x=50, y=50, color='#fff', size=48, opacity=1, scale=1}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  const pop = spring({frame, fps, config: {damping: 14, stiffness: 140}});
+  return <div style={{position:'absolute', left:`${x}%`, top:`${y}%`, transform:`translate(-50%, -50%) scale(${interpolate(pop,[0,1],[0.92,1])*scale})`, opacity: opacity * interpolate(pop,[0,1],[0,1]), color, fontSize:size, fontWeight:800, letterSpacing:-1, textAlign:'center', maxWidth:'86%', lineHeight:1.08}}>{text ?? children}</div>;
+};
+export const Shape: React.FC<Props & {width?: number; height?: number; radius?: number}> = ({x=50,y=50,color='#4CC9F0',width=100,height=100,radius=18,opacity=1}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,width,height,transform:'translate(-50%,-50%)',background:color,borderRadius:radius,opacity}}/>;
+export const Circle: React.FC<Props & {size?: number}> = ({size=100,...props}) => <Shape {...props} width={size} height={size} radius={size/2}/>;
+export const Rectangle: React.FC<Props & {width?: number;height?:number}> = (props) => <Shape {...props}/>;
+export const Arrow: React.FC<Props & {length?: number}> = ({x=50,y=50,color='#fff',length=120}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,width:length,height:5,background:color,transform:'translate(-50%,-50%)',borderRadius:5}}><div style={{position:'absolute',right:-2,top:-8,borderLeft:`18px solid ${color}`,borderTop:'10px solid transparent',borderBottom:'10px solid transparent'}}/></div>;
+export const ConnectorLine: React.FC<Props & {width?:number}> = ({x=50,y=50,color='#fff',width=160}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,width,height:4,background:color,transform:'translate(-50%,-50%)',opacity:.8}}/>;
+export const Icon: React.FC<Props & {name?:string}> = ({name='✦',x=50,y=50,color='#FFD166'}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',fontSize:64,color}}>{name}</div>;
+export const Character: React.FC<Props> = ({x=50,y=50,color='#F72585'}) => <><Circle x={x} y={y-5} size={72} color={color}/><Shape x={x} y={y+9} width={110} height={90} radius={40} color={color}/></>;
+export const SpeechBubble: React.FC<Props & {text:string}> = ({text,x=50,y=35}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',padding:'18px 26px',borderRadius:22,background:'#fff',color:'#172554',fontWeight:700,fontSize:28}}>{text}</div>;
+export const DatabaseCylinder: React.FC<Props & {width?:number;height?:number}> = ({x=50,y=56,color='#4CC9F0',width=340,height=190}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',width,height,borderRadius:'50% / 15%',background:color,boxShadow:`0 ${height/2-18}px 0 ${color}, 0 ${height/2-36}px 0 ${color}`,border:'4px solid rgba(255,255,255,.45)'}}/>;
+export const DatabaseRecord: React.FC<Props & {text:string}> = ({text,x=50,y=56}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',padding:'15px 28px',borderRadius:12,background:'#fff',color:'#101828',fontWeight:700,fontSize:24}}>{text}</div>;
+export const SearchCursor: React.FC<Props> = ({x=50,y=50}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,fontSize:48,color:'#FFD166',transform:'translate(-50%,-50%)'}}>⌕</div>;
+export const TreeNode: React.FC<Props & {text:string}> = ({text,x=50,y=50,color='#80ED99'}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',minWidth:100,padding:'14px 18px',borderRadius:14,background:color,color:'#101828',fontWeight:800,textAlign:'center'}}>{text}</div>;
+export const ProgressIndicator: React.FC<Props & {progress?:number}> = ({x=50,y=80,progress=.7}) => <div style={{position:'absolute',left:'15%',top:`${y}%`,width:'70%',height:12,borderRadius:12,background:'rgba(255,255,255,.2)'}}><div style={{width:`${progress*100}%`,height:'100%',borderRadius:12,background:'#FFD166'}}/></div>;
+export const ComparisonPanel: React.FC<Props & {leftText:string;rightText:string}> = ({leftText,rightText,x=50,y=60}) => <div style={{position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-50%)',display:'flex',gap:20,width:'76%',justifyContent:'center'}}><div style={{flex:1,padding:28,borderRadius:20,background:'#F72585',fontSize:28,fontWeight:800,textAlign:'center'}}>{leftText}</div><div style={{flex:1,padding:28,borderRadius:20,background:'#80ED99',color:'#101828',fontSize:28,fontWeight:800,textAlign:'center'}}>{rightText}</div></div>;
+export const SubtitleOverlay: React.FC<{text:string}> = ({text}) => <div style={{position:'absolute',bottom:'7%',left:'8%',right:'8%',padding:'10px 16px',borderRadius:12,background:'rgba(0,0,0,.66)',color:'#fff',fontSize:'clamp(20px, 3vw, 36px)',fontWeight:700,textAlign:'center',lineHeight:1.15}}>{text}</div>;
+

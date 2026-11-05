@@ -1,2 +1,12 @@
 node_modules
 .venv
+__pycache__
+*.pyc
+.env
+outputs/*
+public/generated/*
+public/audio/*
+!public/audio/.gitkeep
+!public/generated/.gitkeep
+.venv
+public

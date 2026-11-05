@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "project_id": "database-indexing-example",
+  "title": "How Does a Database Index Work?",
+  "original_prompt": "Explain how database indexing works in 30 seconds.",
+  "requested_duration_second": 30,
+  "actual_duration_second": 30,
+  "fps": 30,
+  "resolution": {"width": 1920, "height": 1080},
+  "aspect_ratio": "16:9",
+  "narrator": {"voice": "am_michael", "language": "en-US", "speed": 1.0, "model": "Kokoro-82M"},
+  "script": "Without an index, a database may scan records one by one. An index is an organised shortcut that narrows the search. Many databases use tree-shaped indexes such as B-trees, but not every index is a B-tree. The database follows the path and reaches the matching record.",
+  "scenes": [
+    {"id":"scene-01","start_frame":0,"duration_frames":180,"scene_type":"title","background_color":"#101828","text_elements":[{"id":"t1","text":"How does a database index work?","position":{"x":50,"y":14},"font_size":54,"color":"#FFFFFF","weight":"800","align":"center","animation":"pop"}],"visual_objects":[],"animation":{"enter":"fade","exit":"fade","emphasis":"none","easing":"ease"},"camera":{"start":{"x":0,"y":0},"end":{"x":0,"y":0},"zoom_start":1,"zoom_end":1},"narration_segment_ids":["n1"],"sound_effect_ids":[],"transition":{"kind":"fade","frames":12}},
+    {"id":"scene-02","start_frame":180,"duration_frames":180,"scene_type":"database_scan","background_color":"#172554","text_elements":[{"id":"t2","text":"Without an index: scan, scan, scan...","position":{"x":50,"y":14},"font_size":40,"color":"#FFFFFF","weight":"800","align":"center","animation":"slide"}],"visual_objects":[],"animation":{"enter":"fade","exit":"fade","emphasis":"highlight","easing":"ease"},"camera":{"start":{"x":0,"y":0},"end":{"x":0,"y":0},"zoom_start":1,"zoom_end":1},"narration_segment_ids":["n2"],"sound_effect_ids":[],"transition":{"kind":"fade","frames":12}},
+    {"id":"scene-03","start_frame":360,"duration_frames":180,"scene_type":"index_traversal","background_color":"#20104D","text_elements":[{"id":"t3","text":"An organised path narrows the search","position":{"x":50,"y":14},"font_size":40,"color":"#FFFFFF","weight":"800","align":"center","animation":"slide"}],"visual_objects":[],"animation":{"enter":"fade","exit":"fade","emphasis":"highlight","easing":"ease"},"camera":{"start":{"x":0,"y":0},"end":{"x":0,"y":0},"zoom_start":1,"zoom_end":1.04},"narration_segment_ids":["n3"],"sound_effect_ids":[],"transition":{"kind":"fade","frames":12}},
+    {"id":"scene-04","start_frame":540,"duration_frames":180,"scene_type":"comparison","background_color":"#102A43","text_elements":[{"id":"t4","text":"Full scan vs indexed lookup","position":{"x":50,"y":14},"font_size":40,"color":"#FFFFFF","weight":"800","align":"center","animation":"slide"}],"visual_objects":[],"animation":{"enter":"fade","exit":"fade","emphasis":"none","easing":"ease"},"camera":{"start":{"x":0,"y":0},"end":{"x":0,"y":0},"zoom_start":1,"zoom_end":1},"narration_segment_ids":["n4"],"sound_effect_ids":[],"transition":{"kind":"fade","frames":12}},
+    {"id":"scene-05","start_frame":720,"duration_frames":180,"scene_type":"outro","background_color":"#101828","text_elements":[{"id":"t5","text":"An index is a shortcut map—not magic.","position":{"x":50,"y":14},"font_size":42,"color":"#FFFFFF","weight":"800","align":"center","animation":"pop"}],"visual_objects":[],"animation":{"enter":"fade","exit":"fade","emphasis":"none","easing":"ease"},"camera":{"start":{"x":0,"y":0},"end":{"x":0,"y":0},"zoom_start":1,"zoom_end":1},"narration_segment_ids":["n5"],"sound_effect_ids":[],"transition":{"kind":"fade","frames":12}}
+  ],
+  "narration_segments": [
+    {"id":"n1","text":"Imagine asking a database for one record in a giant pile of papers.","start_second":0,"duration_second":6,"audio_path":null,"emotion":"excitement","delivery_speed":1.0},
+    {"id":"n2","text":"Without an index, it may scan the records one by one.","start_second":6,"duration_second":6,"audio_path":null,"emotion":"neutral","delivery_speed":1.0},
+    {"id":"n3","text":"An index is a separate, organised structure that points toward the data.","start_second":12,"duration_second":6,"audio_path":null,"emotion":"surprise","delivery_speed":1.0},
+    {"id":"n4","text":"Many databases use tree-shaped indexes, such as B-trees, to narrow the path.","start_second":18,"duration_second":6,"audio_path":null,"emotion":"excitement","delivery_speed":1.0},
+    {"id":"n5","text":"It is a shortcut map, not magic—and not every index uses a B-tree.","start_second":24,"duration_second":6,"audio_path":null,"emotion":"humour","delivery_speed":1.0}
+  ],
+  "subtitles": [
+    {"id":"n1","text":"Imagine asking a database for one record in a giant pile of papers.","start_frame":0,"end_frame":180},
+    {"id":"n2","text":"Without an index, it may scan the records one by one.","start_frame":180,"end_frame":360},
+    {"id":"n3","text":"An index is a separate, organised structure that points toward the data.","start_frame":360,"end_frame":540},
+    {"id":"n4","text":"Many databases use tree-shaped indexes, such as B-trees, to narrow the path.","start_frame":540,"end_frame":720},
+    {"id":"n5","text":"It is a shortcut map, not magic—and not every index uses a B-tree.","start_frame":720,"end_frame":900}
+  ],
+  "sound_effect_cues": [], "audio_assets": [],
+  "render": {"codec":"h264","audio_codec":"aac","crf":18,"pixel_format":"yuv420p","include_subtitles":true},
+  "metadata": {"fixture":"deterministic","requires_ollama":false}
+}
