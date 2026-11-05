@@ -13,8 +13,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Direct execution adds scripts/ to sys.path. Add the repository root so the
+# existing backend package can be imported without requiring PYTHONPATH.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.config import settings
 
