@@ -29,7 +29,7 @@ def list_animation_actions() -> list[str]:
 
 
 def list_character_expressions() -> list[str]:
-    return ["happy", "confused", "surprised", "angry", "frustrated", "neutral"]
+    return ["happy", "excited", "confused", "angry", "frustrated", "surprised", "thinking", "worried", "celebrating", "neutral"]
 
 
 def validate_scene_parameters(scene: dict[str, Any]) -> tuple[bool, list[str]]:

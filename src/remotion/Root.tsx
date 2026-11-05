@@ -6,17 +6,17 @@ import type {Project} from './schemas/project';
 import {Video} from './Video';
 
 const previewProject: Project = {
-  schema_version:'1.1', project_id:'development-preview', title:'VectorForge Preview', original_prompt:'', requested_duration_second:8, actual_duration_second:8, fps:30,
+  schema_version:'1.1', project_id:'development-preview', title:'Database Query Preview', original_prompt:'', requested_duration_second:8, actual_duration_second:8, fps:30,
   resolution:{width:1920,height:1080}, aspect_ratio:'16:9', narrator:{voice:'am_michael',language:'en-US',speed:1,model:'Kokoro-82M',model_version:'82M'}, script:'',
   scenes:[{
     id:'preview-scene', start_frame:0, duration_frames:240, scene_type:'developer_search', environment:'developer_desk', background_color:'#101828',
-    text_elements:[{id:'preview-title',text:'VectorForge Preview',position:{x:50,y:12},font_size:60,color:'#fff',weight:'800',align:'center',animation:'pop'}],
+    text_elements:[{id:'preview-title',text:'Database query preview',position:{x:50,y:12},font_size:60,color:'#fff',weight:'800',align:'center',animation:'pop'}],
     visual_objects:[{id:'monitor',kind:'computer_monitor',position:{x:66,y:52},size:{x:34,y:27},color:'#4CC9F0',data:{query:'SELECT * FROM records'}}],
-    characters:[{id:'developer',rig:'human_simple',position:{x:24,y:68},expression:'confused',scale:1,visible:true}],
+    characters:[{id:'developer',rig:'human_simple',position:{x:24,y:82},expression:'confused',scale:1,visible:true,identity_id:'developer',mode:'presenter',anchor:'feet',ground_y:82,pose:'standing'}],
     actions:[{target:'developer',type:'blink',start_frame:20,duration_frames:18,easing:'ease',metadata:{}}],
-    animation:{enter:'fade',exit:'fade',emphasis:'none',easing:'ease'},camera:{start:{x:0,y:0},end:{x:0,y:0},zoom_start:1,zoom_end:1.04},narration_segment_ids:[],sound_effect_ids:[],transition:{kind:'fade',frames:12},
+    animation:{enter:'fade',exit:'fade',emphasis:'none',easing:'ease'},camera:{start:{x:0,y:0},end:{x:0,y:0},zoom_start:1,zoom_end:1.04},narration_segment_ids:[],sound_effect_ids:[],character_mode:'presenter',focus:'preview',layout_template:'character_left_diagram_right',focal_point:{x:50,y:50},motion_plan:{},transition:{kind:'fade',frames:12},
   }],
-  narration_segments:[{id:'preview',text:'Development preview',start_second:0,duration_second:8,audio_path:null,emotion:'neutral',delivery:'neutral',delivery_speed:1,pause_after_ms:0,voice:'am_michael'}],
+  narration_segments:[{id:'preview',text:'Development preview',start_second:0,duration_second:8,audio_path:null,emotion:'neutral',delivery:'neutral',delivery_speed:1,pause_after_ms:0,voice:'am_michael'}], character_identities:[{id:'developer',skin_color:'#FFD6A5',hair_color:'#3A2E39',hair_style:'short',shirt_color:'#4CC9F0',pants_color:'#263A63',shoe_color:'#172033',body_proportions:{head_scale:1,torso_scale:1,arm_length:1,leg_length:1}}], lip_sync:[],
   subtitles:[],sound_effect_cues:[],audio_assets:[],render:{codec:'h264',audio_codec:'aac',crf:18,pixel_format:'yuv420p',include_subtitles:true},metadata:{development_preview:true},
 };
 

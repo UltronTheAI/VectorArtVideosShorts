@@ -8,10 +8,12 @@ from pathlib import Path
 from backend.agents.graph import generation_graph
 from backend.agents.validator import validate_project
 from backend.audio.mixer import AudioClip, AudioMixError, audio_stats, mix_tracks
+from backend.audio.lipsync import analyze_lip_sync
 from backend.audio.sfx_library import SfxLibrary
 from backend.config import settings
-from backend.schemas import AspectRatio, AudioAsset, AudioEvent, MusicConfig, NarrationSegment, Project, Resolution, SfxCue
+from backend.schemas import AspectRatio, AudioAsset, AudioEvent, CharacterIdentity, MusicConfig, NarrationSegment, Project, Resolution, SfxCue
 from backend.tools.timing_tools import seconds_to_frames
+from backend.tools.layout import solve_scenes_layout
 from backend.tts.kokoro_engine import KokoroEngine
 
 log = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ def _write_artifacts(project: Project, project_dir: Path) -> None:
     (project_dir / "project.json").write_text(json.dumps(project.model_dump(mode="json"), indent=2), encoding="utf-8")
     (project_dir / "script.json").write_text(json.dumps({"title": project.title, "script": project.script, "segments": [s.model_dump(mode="json") for s in project.narration_segments]}, indent=2), encoding="utf-8")
     _write_srt(project, project_dir / "subtitles.srt")
+    (project_dir / "lip-sync.json").write_text(json.dumps([sample.model_dump(mode="json") for sample in project.lip_sync], indent=2), encoding="utf-8")
     (project_dir / "audio-manifest.json").write_text(json.dumps({"events": [event.model_dump(mode="json") for event in project.audio_events], "assets": [asset.model_dump(mode="json") for asset in project.audio_assets]}, indent=2), encoding="utf-8")
     (project_dir / "asset-attribution.json").write_text(json.dumps([asset.model_dump(mode="json") for asset in project.audio_assets if asset.attribution_required], indent=2), encoding="utf-8")
 
@@ -92,7 +95,7 @@ def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bo
         segment.start_second = round(measured_cursor, 6)
         measured_cursor += segment.duration_second
     actual_duration = max(measured_cursor, 0.1)
-    scenes = result["scenes"]
+    scenes = solve_scenes_layout(result["scenes"], target_aspect)
     target_frames = max(1, seconds_to_frames(actual_duration, settings.fps))
     cursor = 0
     for index, scene in enumerate(scenes):
@@ -115,13 +118,14 @@ def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bo
     cues, assets, missing_sfx = _select_sfx(scenes, library)
     audio_events: list[AudioEvent] = [AudioEvent(asset_id=segment.id, type="narration", path=str(segment.audio_path), start_ms=round(segment.start_second * 1000), duration_ms=round(segment.duration_second * 1000), volume=settings.narration_volume) for segment in segments if segment.audio_path]
     audio_events += [AudioEvent(asset_id=cue.asset_id, type="sfx", path=str(cue.audio_path), start_ms=round(cue.start_second * 1000), duration_ms=max(50, round(next((asset.duration_second for asset in assets if asset.id == cue.asset_id), 0.25) * 1000)), volume=cue.volume) for cue in cues if cue.audio_path]
+    identity = CharacterIdentity(id="developer", skin_color="#FFD6A5", hair_color="#3A2E39", hair_style="short", shirt_color="#4CC9F0", pants_color="#263A63", shoe_color="#172033")
     project = Project(
         schema_version="1.1", project_id=project_id,
         title="How Does a Database Index Work?" if "database" in plan["topic"].lower() else plan["topic"].title(),
         original_prompt=prompt, requested_duration_second=float(plan["duration_second"]), actual_duration_second=actual_duration,
         fps=settings.fps, resolution=resolution_for(target_aspect), aspect_ratio=AspectRatio(target_aspect),
         narrator={"voice": plan.get("voice", settings.tts_voice), "speed": settings.tts_speed}, script=result["script"], scenes=scenes,
-        narration_segments=segments, subtitles=subtitles, sound_effect_cues=cues, audio_assets=assets, audio_events=audio_events,
+        narration_segments=segments, subtitles=subtitles, character_identities=[identity], sound_effect_cues=cues, audio_assets=assets, audio_events=audio_events,
         music=MusicConfig(enabled=settings.music_enabled, mood="playful_technology" if "energetic" in plan.get("tone", []) else "technical", volume=settings.music_volume, ducking=settings.music_ducking_enabled),
         metadata={"plan": plan, "project_dir": str(project_dir), "audio_ready": generate_audio, "missing_sfx_requirements": missing_sfx},
     )
@@ -140,6 +144,8 @@ def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bo
         mixed = mix_tracks(narration_clips, effect_clips, project_dir, actual_duration, music=music_clips)
         project.metadata["narration_path"] = str(mixed["narration_path"])
         project.metadata["mixed_audio_path"] = str(mixed["final_audio_path"])
+        project.lip_sync = analyze_lip_sync(mixed["narration_path"], project.fps, project.actual_duration_second)
+        project.metadata["lip_sync_source"] = str(mixed["narration_path"])
     return validate_project(project)
 
 

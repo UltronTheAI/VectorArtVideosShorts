@@ -10,7 +10,9 @@ from backend.tools.timing_tools import estimate_narration_duration, seconds_to_f
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_EXPRESSIONS = {"happy", "confused", "surprised", "angry", "frustrated", "neutral"}
+SUPPORTED_EXPRESSIONS = {"happy", "excited", "confused", "angry", "frustrated", "surprised", "thinking", "worried", "celebrating", "neutral"}
+SUPPORTED_CHARACTER_MODES = {"none", "presenter", "observer", "actor", "reaction"}
+SUPPORTED_LAYOUTS = {"character_left_diagram_right", "character_right_diagram_left", "full_screen_diagram", "character_foreground", "vertical_stack", "split_comparison", "reaction_closeup"}
 
 
 def normalize_expression(value: object, default: str = "neutral") -> str:
@@ -19,10 +21,11 @@ def normalize_expression(value: object, default: str = "neutral") -> str:
     if text in SUPPORTED_EXPRESSIONS:
         return text
     aliases = {
-        "joyful": "happy", "cheerful": "happy", "excited": "surprised", "astonished": "surprised",
+        "joyful": "happy", "cheerful": "happy", "astonished": "surprised",
         "shocked": "surprised", "curious": "confused", "puzzled": "confused", "uncertain": "confused",
         "annoyed": "frustrated", "slightly frustrated": "frustrated", "stressed": "frustrated",
         "mad": "angry", "calm": "neutral", "focused": "neutral", "serious": "neutral",
+        "pondering": "thinking", "concerned": "worried", "celebrating": "celebrating",
     }
     if text in aliases:
         return aliases[text]
@@ -54,7 +57,10 @@ def _llm_scene_hints(plan: dict[str, Any], script: str) -> list[dict[str, Any]] 
             "topic": plan["topic"], "script": script,
             "supported_scene_types": [item.value for item in SceneType],
             "supported_environments": ["developer_desk", "computer_workstation", "database_server_room", "abstract_database_space", "educational_whiteboard", "digital_network", "office_interior"],
-            "output": {"scenes": [{"scene_type": "developer_search", "environment": "developer_desk", "title": "", "character_expression": "neutral"}]},
+            "supported_character_modes": sorted(SUPPORTED_CHARACTER_MODES),
+            "supported_layouts": sorted(SUPPORTED_LAYOUTS),
+            "supported_actions": sorted({"move", "scale", "rotate", "fade", "bounce", "shake", "blink", "walk", "point", "nod", "celebrate", "frustrated", "surprised", "draw_path", "highlight", "camera_pan", "camera_zoom", "look", "wave", "think", "shrug"}),
+            "output": {"scenes": [{"scene_type": "developer_search", "environment": "developer_desk", "title": "", "character_expression": "neutral", "character_mode": "presenter", "layout_template": "character_left_diagram_right", "focus": "main concept"}]},
         }
         response = ChatOllama(model="qwen2.5:7b", temperature=0.1, format="json").invoke([HumanMessage(content=json.dumps(prompt))])
         content = response.content
@@ -99,6 +105,14 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
         duration = (max((x["start_second"] + x["duration_second"] for x in group), default=(index + 1) * plan["duration_second"] / scene_count)
                     - min((x["start_second"] for x in group), default=index * plan["duration_second"] / scene_count))
         duration_frames = max(fps, seconds_to_frames(duration, fps))
+        character_mode = "presenter"
+        if scene_type in {SceneType.FULL_SCAN, SceneType.INDEX_INTRO, SceneType.COMPARISON}:
+            character_mode = "none"
+        elif scene_type == SceneType.INDEXED_SEARCH:
+            character_mode = "reaction"
+        elif scene_type == SceneType.ENDING:
+            character_mode = "actor"
+        layout_template = ""
         if hints and index < len(hints) and isinstance(hints[index], dict):
             hint = hints[index]
             title = str(hint.get("title") or title)
@@ -106,8 +120,18 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
             expression = normalize_expression(hint.get("character_expression"), expression)
             if environment not in SUPPORTED_ENVIRONMENTS:
                 environment = blueprint[index][1]
+            hinted_mode = str(hint.get("character_mode") or "").strip().lower()
+            hinted_layout = str(hint.get("layout_template") or "").strip().lower()
+            if scene_type in {SceneType.FULL_SCAN, SceneType.INDEX_INTRO, SceneType.COMPARISON}:
+                character_mode = "none"
+            elif hinted_mode in SUPPORTED_CHARACTER_MODES:
+                character_mode = hinted_mode
+            if hinted_layout in SUPPORTED_LAYOUTS:
+                layout_template = hinted_layout
+            else:
+                layout_template = ""
         expression = normalize_expression(expression)
-        characters = [CharacterSpec(id="developer", position=Vec2(x=24 if index != 2 else 72, y=68), expression=expression)]
+        characters = [] if character_mode == "none" else [CharacterSpec(id="developer", position=Vec2(x=24 if index != 2 else 72, y=82), expression=expression, identity_id="developer", mode=character_mode, anchor="feet", ground_y=82, pose="celebrating" if scene_type == SceneType.ENDING else "standing")]
         objects: list[VisualObject] = []
         sound_requests: list[SoundRequest] = []
         actions = [
@@ -142,6 +166,11 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
             animation=AnimationParams(enter="fade", exit="fade", emphasis="highlight" if scene_type in {SceneType.FULL_SCAN, SceneType.INDEXED_SEARCH} else "none"),
             camera=CameraParams(start=Vec2(x=0, y=0), end=Vec2(x=0, y=0), zoom_start=1.0, zoom_end=1.06 if scene_type in {SceneType.DEVELOPER_SEARCH, SceneType.INDEX_INTRO} else 1.0),
             narration_segment_ids=[x["id"] for x in group], sound_effect_ids=[], sound_requests=sound_requests,
+            character_mode=character_mode,
+            focus={SceneType.DEVELOPER_SEARCH: "developer_and_query", SceneType.FULL_SCAN: "sequential_record_search", SceneType.INDEX_INTRO: "index_structure", SceneType.INDEXED_SEARCH: "active_index_path", SceneType.COMPARISON: "search_tradeoff", SceneType.ENDING: "database_shortcut"}.get(scene_type, "main_concept"),
+            layout_template=layout_template or ("full_screen_diagram" if character_mode == "none" else ("reaction_closeup" if character_mode == "reaction" else "character_left_diagram_right")),
+            focal_point=Vec2(x=62 if character_mode == "none" else 50, y=52),
+            motion_plan={"primary_visual": scene_type.value, "entrance": scene.animation.enter, "main_action": scene_type.value, "secondary_action": "subtitle_emphasis", "exit": scene.animation.exit, "camera_target": "focal_point", "character_mode": character_mode},
         ))
         cursor_frame += duration_frames
     return scenes, segments

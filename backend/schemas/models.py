@@ -31,6 +31,7 @@ SUPPORTED_ENVIRONMENTS = {
 SUPPORTED_ACTIONS = {
     "move", "scale", "rotate", "fade", "bounce", "shake", "blink", "walk", "point",
     "nod", "celebrate", "frustrated", "surprised", "draw_path", "highlight", "camera_pan", "camera_zoom",
+    "look", "wave", "think", "shrug", "turn", "sit", "stand", "jump",
 }
 
 
@@ -69,9 +70,32 @@ class CharacterSpec(BaseModel):
     id: str
     rig: Literal["human_simple"] = "human_simple"
     position: Vec2 = Vec2(x=50, y=65)
-    expression: Literal["happy", "confused", "surprised", "angry", "frustrated", "neutral"] = "neutral"
+    expression: Literal["happy", "excited", "confused", "angry", "frustrated", "surprised", "thinking", "worried", "celebrating", "neutral"] = "neutral"
     scale: float = Field(default=1.0, gt=0.1, le=4)
     visible: bool = True
+    identity_id: str = "developer"
+    mode: Literal["none", "presenter", "observer", "actor", "reaction"] = "presenter"
+    anchor: Literal["feet", "center"] = "feet"
+    ground_y: float = Field(default=82, ge=0, le=100)
+    pose: Literal["standing", "seated", "walking", "celebrating"] = "standing"
+
+
+class CharacterIdentity(BaseModel):
+    id: str
+    skin_color: str = "#FFD6A5"
+    hair_color: str = "#3A2E39"
+    hair_style: Literal["short", "curly", "bun", "long"] = "short"
+    shirt_color: str = "#4CC9F0"
+    pants_color: str = "#263A63"
+    shoe_color: str = "#172033"
+    body_proportions: dict[str, float] = Field(default_factory=lambda: {"head_scale": 1.0, "torso_scale": 1.0, "arm_length": 1.0, "leg_length": 1.0})
+
+
+class CharacterPlacement(BaseModel):
+    anchor: Literal["feet", "center"] = "feet"
+    ground_y: float = Field(default=82, ge=0, le=100)
+    x: float = Field(default=50, ge=0, le=100)
+    scale: float = Field(default=1.0, gt=0.1, le=4)
 
 
 class AnimationParams(BaseModel):
@@ -122,6 +146,13 @@ class NarrationSegment(BaseModel):
     delivery_speed: float = Field(default=1.0, gt=0.5, le=1.5)
     pause_after_ms: int = Field(default=0, ge=0, le=3000)
     voice: Literal["am_michael", "am_adam"] = "am_michael"
+
+
+class LipSyncSample(BaseModel):
+    frame: int = Field(ge=0)
+    mouth_open: float = Field(ge=0, le=1)
+    speech_active: bool = False
+    viseme: Literal["closed", "open", "wide", "rounded", "teeth", "smile", "fv", "mbp"] = "closed"
 
 
 class Subtitle(BaseModel):
@@ -203,6 +234,11 @@ class Scene(BaseModel):
     narration_segment_ids: list[str] = Field(default_factory=list)
     sound_effect_ids: list[str] = Field(default_factory=list)
     sound_requests: list[SoundRequest] = Field(default_factory=list)
+    character_mode: Literal["none", "presenter", "observer", "actor", "reaction"] = "presenter"
+    focus: str = ""
+    layout_template: Literal["character_left_diagram_right", "character_right_diagram_left", "full_screen_diagram", "character_foreground", "vertical_stack", "split_comparison", "reaction_closeup"] = "character_left_diagram_right"
+    focal_point: Vec2 = Vec2(x=50, y=50)
+    motion_plan: dict[str, Any] = Field(default_factory=dict)
     transition: TransitionParams = TransitionParams()
 
     @model_validator(mode="after")
@@ -244,6 +280,8 @@ class Project(BaseModel):
     script: str
     scenes: list[Scene] = Field(min_length=1)
     narration_segments: list[NarrationSegment] = Field(min_length=1)
+    character_identities: list[CharacterIdentity] = Field(default_factory=list)
+    lip_sync: list[LipSyncSample] = Field(default_factory=list)
     subtitles: list[Subtitle] = Field(default_factory=list)
     sound_effect_cues: list[SfxCue] = Field(default_factory=list)
     audio_assets: list[AudioAsset] = Field(default_factory=list)
