@@ -52,11 +52,11 @@ KOKORO_MODEL=Kokoro-82M
 KOKORO_MODEL_VERSION=82M
 KOKORO_REPO_ID=hexgrad/Kokoro-82M
 KOKORO_MODEL_DIR=C:\Models\kokoro
-KOKORO_OFFLINE=1
+KOKORO_OFFLINE=0
 KOKORO_DEVICE=auto
 ```
 
-Kokoro cache keys include text, voice, speed, model/version, repository, device, language, delivery metadata, and pause metadata. Cached WAVs are checked for corruption, zero length, and effective silence; legacy ID-named placeholders are not accepted. `KOKORO_DEVICE=auto` follows the local PyTorch availability check and selects CUDA when available, otherwise CPU. You can override it with `cpu` or `cuda`.
+Kokoro cache keys include text, voice, speed, model/version, repository, device, language, delivery metadata, and pause metadata. Cached WAVs are checked for corruption, zero length, and effective silence; legacy ID-named placeholders are not accepted. `KOKORO_DEVICE=auto` follows the local PyTorch availability check and selects CUDA when available, otherwise CPU. You can override it with `cpu` or `cuda`. Use `KOKORO_OFFLINE=0` for first-run model setup, then switch to `1` after the Kokoro-82M model and voice files are present in the configured cache.
 
 ## First video
 

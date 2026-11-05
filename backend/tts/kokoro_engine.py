@@ -73,8 +73,8 @@ class KokoroEngine:
             )
         if self.offline:
             os.environ.setdefault("HF_HUB_OFFLINE", "1")
-        if os.getenv("KOKORO_MODEL_DIR"):
-            os.environ.setdefault("HF_HOME", os.getenv("KOKORO_MODEL_DIR", ""))
+        if settings.kokoro_model_dir:
+            os.environ["HF_HOME"] = settings.kokoro_model_dir
 
     def _cache_path(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> Path:
         payload = {
@@ -112,6 +112,19 @@ class KokoroEngine:
             prepared += " " + ("..." if pause_after_ms < 500 else "... ...")
         return prepared
 
+    @staticmethod
+    def _is_missing_local_model_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return "local cache" in message or "cannot find the requested files" in message or "offline mode" in message
+
+    def _generate_audio(self, prepared: str) -> np.ndarray:
+        from kokoro import KPipeline
+        pipeline = KPipeline(lang_code=settings.tts_lang, repo_id=settings.tts_repo_id, device=self.resolve_device())
+        chunks = [audio for _, _, audio in pipeline(prepared, voice=self.voice, speed=self.speed, split_pattern=r"\n+")]
+        if not chunks:
+            raise KokoroError("Kokoro returned no audio chunks.")
+        return np.concatenate(chunks).astype(np.float32)
+
     def synthesize(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> tuple[Path, float, bool]:
         self.initialize()
         prepared = self._prepare_text(text, pause_after_ms, delivery)
@@ -122,12 +135,14 @@ class KokoroEngine:
             except KokoroError:
                 path.unlink(missing_ok=True)
         try:
-            from kokoro import KPipeline
-            pipeline = KPipeline(lang_code=settings.tts_lang, repo_id=settings.tts_repo_id, device=self.resolve_device())
-            chunks = [audio for _, _, audio in pipeline(prepared, voice=self.voice, speed=self.speed, split_pattern=r"\n+")]
-            if not chunks:
-                raise KokoroError("Kokoro returned no audio chunks.")
-            audio = np.concatenate(chunks).astype(np.float32)
+            try:
+                audio = self._generate_audio(prepared)
+            except Exception as first_error:
+                if not self.offline or not self._is_missing_local_model_error(first_error):
+                    raise
+                log.warning("Kokoro weights are absent from the offline cache; retrying first-run model setup with Hub access.")
+                os.environ.pop("HF_HUB_OFFLINE", None)
+                audio = self._generate_audio(prepared)
             write_wav(path, audio, 24000)
             duration = self._validate_wav(path)
             return path, duration, False
