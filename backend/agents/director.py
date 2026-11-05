@@ -5,6 +5,8 @@ import logging
 import re
 from typing import Any
 
+from backend.agents.llm_schemas import SceneHintList
+from backend.llm.providers import invoke_json
 from backend.schemas import Action, AnimationParams, CameraParams, CharacterSpec, SoundRequest, SUPPORTED_ENVIRONMENTS, Scene, SceneType, TextElement, Vec2, VisualObject
 from backend.tools.timing_tools import estimate_narration_duration, seconds_to_frames
 
@@ -13,6 +15,7 @@ log = logging.getLogger(__name__)
 SUPPORTED_EXPRESSIONS = {"happy", "excited", "confused", "angry", "frustrated", "surprised", "thinking", "worried", "celebrating", "neutral"}
 SUPPORTED_CHARACTER_MODES = {"none", "presenter", "observer", "actor", "reaction"}
 SUPPORTED_LAYOUTS = {"character_left_diagram_right", "character_right_diagram_left", "full_screen_diagram", "character_foreground", "vertical_stack", "split_comparison", "reaction_closeup"}
+SUPPORTED_SFX_CATEGORIES = {"click", "pop", "whoosh", "typing", "keyboard", "impact", "error", "failure", "success", "glitch", "footsteps", "laughter", "sigh", "transition", "ambience", "background_music"}
 
 
 def normalize_expression(value: object, default: str = "neutral") -> str:
@@ -48,10 +51,9 @@ def split_script(script: str, target_duration: float, fps: int = 30) -> list[dic
     return result
 
 
-def _llm_scene_hints(plan: dict[str, Any], script: str) -> list[dict[str, Any]] | None:
+def _llm_scene_hints(plan: dict[str, Any], script: str, provider: str | None = None) -> list[dict[str, Any]]:
+    from langchain_core.messages import HumanMessage
     try:
-        from langchain_core.messages import HumanMessage
-        from langchain_ollama import ChatOllama
         prompt = {
             "task": "Choose visual scene hints for a deterministic vector animation.",
             "topic": plan["topic"], "script": script,
@@ -60,22 +62,26 @@ def _llm_scene_hints(plan: dict[str, Any], script: str) -> list[dict[str, Any]] 
             "supported_character_modes": sorted(SUPPORTED_CHARACTER_MODES),
             "supported_layouts": sorted(SUPPORTED_LAYOUTS),
             "supported_actions": sorted({"move", "scale", "rotate", "fade", "bounce", "shake", "blink", "walk", "point", "nod", "celebrate", "frustrated", "surprised", "draw_path", "highlight", "camera_pan", "camera_zoom", "look", "wave", "think", "shrug"}),
-            "output": {"scenes": [{"scene_type": "developer_search", "environment": "developer_desk", "title": "", "character_expression": "neutral", "character_mode": "presenter", "layout_template": "character_left_diagram_right", "focus": "main concept"}]},
+            "output": {"scenes": [{"scene_type": "developer_search", "environment": "developer_desk", "title": "Opening problem", "character_expression": "neutral", "character_mode": "presenter", "layout_template": "character_left_diagram_right", "focus": "main concept", "character_actions": ["point"], "camera_motion": "slow_push", "transition": "fade", "sfx_categories": ["click"]}]},
         }
-        response = ChatOllama(model="qwen2.5:7b", temperature=0.1, format="json").invoke([HumanMessage(content=json.dumps(prompt))])
-        content = response.content
-        raw = "".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content) if isinstance(content, list) else str(content)
-        data = json.loads(raw)
-        hints = data.get("scenes")
-        return hints if isinstance(hints, list) else None
+        response = invoke_json(
+            [HumanMessage(content=json.dumps(prompt))],
+            schema=SceneHintList,
+            provider=provider,
+            temperature=0.1,
+            cache_payload={"stage": "storyboard_director", "topic": plan["topic"], "script": script, "schema_version": "1"},
+        )
+        plan["_llm_scene_director"] = response.metadata()
+        hints = response.data.scenes if isinstance(response.data, SceneHintList) else SceneHintList.model_validate(response.data).scenes
+        return [hint.model_dump(mode="json") for hint in hints]
     except Exception as exc:
-        log.warning("Scene-hint planning unavailable; using validated deterministic plan: %s", exc)
-        return None
+        log.error("Storyboard director failed after provider fallback handling: %s", exc)
+        raise
 
 
-def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: bool = False) -> tuple[list[Scene], list[dict[str, Any]]]:
+def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: bool = False, provider: str | None = None) -> tuple[list[Scene], list[dict[str, Any]]]:
     segments = split_script(script, float(plan["duration_second"]), fps)
-    hints = _llm_scene_hints(plan, script) if use_llm else None
+    hints = _llm_scene_hints(plan, script, provider=provider) if use_llm else None
     database = "database" in plan["topic"].lower() and "index" in plan["topic"].lower()
     if database:
         blueprint = [
@@ -113,15 +119,22 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
         elif scene_type == SceneType.ENDING:
             character_mode = "actor"
         layout_template = ""
+        hint_camera_motion = "static"
+        hint_transition = "fade"
+        hint_sfx_categories: list[str] = []
         if hints and index < len(hints) and isinstance(hints[index], dict):
             hint = hints[index]
             title = str(hint.get("title") or title)
+            hint_focus = str(hint.get("focus") or "").strip()
             environment = str(hint.get("environment") or environment)
             expression = normalize_expression(hint.get("character_expression"), expression)
             if environment not in SUPPORTED_ENVIRONMENTS:
                 environment = blueprint[index][1]
             hinted_mode = str(hint.get("character_mode") or "").strip().lower()
             hinted_layout = str(hint.get("layout_template") or "").strip().lower()
+            hint_camera_motion = str(hint.get("camera_motion") or "static").strip().lower()
+            hint_transition = str(hint.get("transition") or "fade").strip().lower()
+            hint_sfx_categories = [str(category).strip().lower() for category in hint.get("sfx_categories", []) if str(category).strip().lower() in SUPPORTED_SFX_CATEGORIES]
             if scene_type in {SceneType.FULL_SCAN, SceneType.INDEX_INTRO, SceneType.COMPARISON}:
                 character_mode = "none"
             elif hinted_mode in SUPPORTED_CHARACTER_MODES:
@@ -158,19 +171,27 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
         else:
             objects = [VisualObject(id="database", kind="database_cylinder", position=Vec2(x=65, y=55), size=Vec2(x=30, y=30), color="#4CC9F0")]
             actions += [Action(target="developer", type="celebrate", start_frame=min(40, duration_frames - 1), duration_frames=max(1, duration_frames - min(40, duration_frames - 1)))]
+        existing_categories = {request.category for request in sound_requests}
+        for category in hint_sfx_categories:
+            if category not in existing_categories:
+                sound_requests.append(SoundRequest(category=category, description=f"AI-directed {category} cue", at_ms=min(500, max(0, duration_frames * 1000 // max(1, fps) // 3)), volume=0.16))
+        animation = AnimationParams(enter="fade", exit="fade", emphasis="highlight" if scene_type in {SceneType.FULL_SCAN, SceneType.INDEXED_SEARCH} else "none")
+        zoom_end = 1.06 if scene_type in {SceneType.DEVELOPER_SEARCH, SceneType.INDEX_INTRO} or "push" in hint_camera_motion or "zoom" in hint_camera_motion else 1.0
+        transition_kind = hint_transition if hint_transition in {"cut", "fade", "slide", "wipe"} else "fade"
         scenes.append(Scene(
             id=f"scene-{index + 1:02d}", start_frame=cursor_frame, duration_frames=duration_frames, scene_type=scene_type,
             environment=environment, background_color=colors[index % len(colors)],
             text_elements=[TextElement(id=f"title-{index + 1:02d}", text=title, position=Vec2(x=50, y=12), font_size=50 if index == 0 else 40, animation="pop" if index == 0 else "slide")],
             visual_objects=objects, characters=characters, actions=actions,
-            animation=AnimationParams(enter="fade", exit="fade", emphasis="highlight" if scene_type in {SceneType.FULL_SCAN, SceneType.INDEXED_SEARCH} else "none"),
-            camera=CameraParams(start=Vec2(x=0, y=0), end=Vec2(x=0, y=0), zoom_start=1.0, zoom_end=1.06 if scene_type in {SceneType.DEVELOPER_SEARCH, SceneType.INDEX_INTRO} else 1.0),
+            animation=animation,
+            camera=CameraParams(start=Vec2(x=0, y=0), end=Vec2(x=8 if "pan" in hint_camera_motion else 0, y=0), zoom_start=1.0, zoom_end=zoom_end),
             narration_segment_ids=[x["id"] for x in group], sound_effect_ids=[], sound_requests=sound_requests,
             character_mode=character_mode,
-            focus={SceneType.DEVELOPER_SEARCH: "developer_and_query", SceneType.FULL_SCAN: "sequential_record_search", SceneType.INDEX_INTRO: "index_structure", SceneType.INDEXED_SEARCH: "active_index_path", SceneType.COMPARISON: "search_tradeoff", SceneType.ENDING: "database_shortcut"}.get(scene_type, "main_concept"),
+            focus=hint_focus or {SceneType.DEVELOPER_SEARCH: "developer_and_query", SceneType.FULL_SCAN: "sequential_record_search", SceneType.INDEX_INTRO: "index_structure", SceneType.INDEXED_SEARCH: "active_index_path", SceneType.COMPARISON: "search_tradeoff", SceneType.ENDING: "database_shortcut"}.get(scene_type, "main_concept"),
             layout_template=layout_template or ("full_screen_diagram" if character_mode == "none" else ("reaction_closeup" if character_mode == "reaction" else "character_left_diagram_right")),
             focal_point=Vec2(x=62 if character_mode == "none" else 50, y=52),
-            motion_plan={"primary_visual": scene_type.value, "entrance": scene.animation.enter, "main_action": scene_type.value, "secondary_action": "subtitle_emphasis", "exit": scene.animation.exit, "camera_target": "focal_point", "character_mode": character_mode},
+            motion_plan={"primary_visual": scene_type.value, "entrance": animation.enter, "main_action": scene_type.value, "secondary_action": "subtitle_emphasis", "exit": animation.exit, "camera_target": "focal_point", "camera_motion": hint_camera_motion, "character_mode": character_mode},
+            transition={"kind": transition_kind, "frames": 12},
         ))
         cursor_frame += duration_frames
     return scenes, segments

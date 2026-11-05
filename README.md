@@ -1,10 +1,10 @@
 # VectorForge
 
-VectorForge is a local-only pipeline for turning a natural-language technical idea into an animated, faceless 2D vector video. The pipeline is intentionally strict: a normal generation run requires real Kokoro speech and a valid final audio timeline. It never substitutes silence for narration.
+VectorForge is a local rendering/audio pipeline for turning a natural-language technical idea into an animated, faceless 2D vector video. Text planning can use Groq's `openai/gpt-oss-20b` or local Ollama Qwen; Kokoro speech, SFX, mixing, and Remotion rendering remain local. The pipeline is intentionally strict: a normal generation run requires real Kokoro speech and a valid final audio timeline. It never substitutes silence for narration.
 
 ## Architecture
 
-The Python side interprets the prompt, writes and validates the narration, plans supported environments/characters/actions with LangGraph and optional local Qwen, synthesizes segment WAVs with Kokoro, retrieves only catalogued licensed SFX, composes `narration.wav` and `final_audio.wav`, writes subtitles/SRT, and passes one JSON contract to Remotion.
+The Python side interprets the prompt, writes and validates the narration, plans supported environments/characters/actions with LangGraph and a provider-neutral AI director, synthesizes segment WAVs with Kokoro, retrieves only catalogued licensed SFX, composes `narration.wav` and `final_audio.wav`, writes subtitles/SRT, and passes one JSON contract to Remotion.
 
 The Remotion side accepts exactly `{ "project": { ... } }`. Zod validates the project before metadata is calculated. Duration, FPS, width, height, scenes, actions, environments, character rigs, subtitles, and audio metadata all come from that project. The development fixture is used only as Composition `defaultProps` when opening the Remotion project without external props; invalid supplied props throw an explicit error.
 
@@ -17,11 +17,34 @@ python -m pip install -r requirements.txt
 npm install
 ```
 
-Install FFmpeg and `ffprobe`, then add their `bin` directory to PATH. Install Ollama and pull the local planner model:
+If the environment was installed before Groq support was added, update the adapter manually:
+
+```powershell
+python -m pip install -U langchain-groq
+```
+
+Install FFmpeg and `ffprobe`, then add their `bin` directory to PATH. Groq is the default planning provider. Install its adapter with the requirements file. Ollama remains an optional local fallback; pull the local model if you want offline fallback:
 
 ```powershell
 ollama pull qwen2.5:7b
 ```
+
+## AI provider configuration
+
+Create a Groq API key in the Groq console and put it only in `.env`:
+
+```text
+LLM_PROVIDER=groq
+GROQ_API_KEY=your-key
+GROQ_MODEL=openai/gpt-oss-20b
+GROQ_REASONING_EFFORT=medium
+GROQ_TIMEOUT=120
+LLM_FALLBACK_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b
+```
+
+Supported reasoning values are `low`, `medium`, and `high`. Planning calls are cached under `.cache/vectorforge/llm/` using the prompt, model, provider, and schema payload; API keys are never written to the cache or project metadata. The provider adapter uses bounded retries for transient failures, does not retry authentication failures with the same credentials, and records any Groq-to-Ollama fallback in logs and project metadata. Rate-limit failures are reported after the configured retry limit.
 
 Run the TTS setup guidance:
 
@@ -72,7 +95,14 @@ Custom prompt generation:
 python -m backend.main generate --prompt "Explain how database indexing works in 30 seconds with colourful animation and a male narrator" --format both --use-llm
 ```
 
-`--use-llm` enables local Qwen script and scene-hint planning. All output remains constrained by Pydantic schemas and supported scene/action/environment lists. If Qwen is unavailable, the deterministic fallback is still a multi-scene visual plan; it is never a title-only fallback.
+AI planning uses `LLM_PROVIDER` by default. Explicit provider selection is also supported:
+
+```powershell
+python -m backend.main generate --prompt "Explain database indexing" --duration 30 --format both --provider groq
+python -m backend.main generate --prompt "Explain database indexing" --duration 30 --format both --provider ollama
+```
+
+`--use-llm` remains supported for backward compatibility. LLM stages return validated Pydantic data for idea interpretation, scriptwriting, storyboard hints, and scene direction. If the selected provider and its configured fallback both fail, generation stops with a nonzero error; it does not silently replace an AI-directed run with generic scenes.
 
 To render an existing generated project:
 
@@ -167,4 +197,4 @@ Landscape uses wide side-by-side compositions at 1920×1080. Portrait uses a sta
 
 ## Limitations
 
-Subtitles are segment-level, not word-level forced alignment. Kokoro controls delivery through supported speed, punctuation, pauses, and segment boundaries; emotion labels are planning metadata and do not guarantee acting. SFX retrieval requires either configured official API access or manually imported licensed assets. No cloud inference or paid API is required.
+Subtitles are segment-level, not word-level forced alignment. Kokoro controls delivery through supported speed, punctuation, pauses, and segment boundaries; emotion labels are planning metadata and do not guarantee acting. SFX retrieval requires either configured official API access or manually imported licensed assets. Groq text planning is optional; audio and video generation remain local, and Ollama can be selected when fully local planning is required.

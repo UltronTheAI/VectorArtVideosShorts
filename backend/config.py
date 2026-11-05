@@ -16,6 +16,14 @@ except ImportError:
 class Settings:
     root: Path = ROOT
     fps: int = int(os.getenv("VIDEO_FPS", os.getenv("VECTORFORGE_FPS", "30")))
+    llm_provider: str = os.getenv("LLM_PROVIDER", "groq").strip().lower()
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_model: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    groq_reasoning_effort: str = os.getenv("GROQ_REASONING_EFFORT", "medium").strip().lower()
+    groq_timeout: int = int(os.getenv("GROQ_TIMEOUT", "120"))
+    llm_fallback_provider: str = os.getenv("LLM_FALLBACK_PROVIDER", "ollama").strip().lower()
+    llm_max_retries: int = max(0, int(os.getenv("LLM_MAX_RETRIES", "2")))
+    llm_cache_enabled: bool = os.getenv("LLM_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
     ollama_url: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
     tts_voice: str = os.getenv("KOKORO_VOICE", "am_michael")
@@ -37,6 +45,14 @@ class Settings:
     freesound_api_key: str = os.getenv("FREESOUND_API_KEY", "")
     freesound_access_token: str = os.getenv("FREESOUND_ACCESS_TOKEN", "")
     pixabay_api_key: str = os.getenv("PIXABAY_API_KEY", "")
+
+    def __post_init__(self) -> None:
+        if self.llm_provider not in {"groq", "ollama"}:
+            raise ValueError("LLM_PROVIDER must be groq or ollama")
+        if self.llm_fallback_provider not in {"", "groq", "ollama"}:
+            raise ValueError("LLM_FALLBACK_PROVIDER must be empty, groq, or ollama")
+        if self.groq_reasoning_effort not in {"low", "medium", "high"}:
+            raise ValueError("GROQ_REASONING_EFFORT must be low, medium, or high")
 
     @property
     def outputs(self) -> Path:
@@ -67,11 +83,15 @@ class Settings:
         return self.music_dir / "cache"
 
     @property
+    def llm_cache_dir(self) -> Path:
+        return self.root / ".cache" / "vectorforge" / "llm"
+
+    @property
     def manifest(self) -> Path:
         return self.sfx_dir / "manifest.json"
 
     def ensure_directories(self) -> None:
-        for path in (self.outputs, self.generated, self.audio, self.sfx_dir, self.sfx_cache, self.music_dir, self.music_cache, self.root / "assets" / "fonts"):
+        for path in (self.outputs, self.generated, self.audio, self.sfx_dir, self.sfx_cache, self.music_dir, self.music_cache, self.llm_cache_dir, self.root / "assets" / "fonts"):
             path.mkdir(parents=True, exist_ok=True)
 
 

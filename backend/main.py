@@ -38,16 +38,19 @@ def check_ollama() -> tuple[bool, str]:
 def doctor() -> int:
     settings.ensure_directories()
     ollama_ok, ollama_message = check_ollama()
+    groq_required = settings.llm_provider == "groq" or settings.llm_fallback_provider == "groq"
+    ollama_required = settings.llm_provider == "ollama" or settings.llm_fallback_provider == "ollama"
     checks = {
         "pydantic": importlib.util.find_spec("pydantic") is not None,
         "langchain": importlib.util.find_spec("langchain") is not None,
+        "langchain_groq": importlib.util.find_spec("langchain_groq") is not None or not groq_required,
         "langgraph": importlib.util.find_spec("langgraph") is not None,
         "kokoro_package": KokoroEngine().available,
         "node": shutil.which("node") is not None,
         "npx": shutil.which("npx") is not None,
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "ffprobe": shutil.which("ffprobe") is not None,
-        "ollama_qwen": ollama_ok,
+        "ollama_qwen": ollama_ok or not ollama_required,
         "sound_catalogue": settings.manifest.exists(),
         "required_directories": all(path.exists() for path in (settings.outputs, settings.generated, settings.sfx_dir)),
     }
@@ -59,8 +62,12 @@ def doctor() -> int:
         print("  Install Kokoro, PyTorch, SoundFile, NumPy, and espeak-ng; see README.md.")
     if not checks["ffmpeg"]:
         print("  Install FFmpeg and ffprobe, then add both bin directories to PATH.")
-    if not checks["ollama_qwen"]:
+    if ollama_required and not ollama_ok:
         print(f"  Start Ollama and install the model: ollama pull {settings.ollama_model}")
+    if settings.llm_provider == "groq" and not settings.groq_api_key:
+        print("  GROQ_API_KEY is empty while LLM_PROVIDER=groq; configure it or select --provider ollama.")
+    if groq_required and not checks["langchain_groq"]:
+        print("  Install the Groq adapter with: pip install langchain-groq")
     return 0 if all(checks.values()) else 1
 
 
@@ -175,10 +182,11 @@ def audio_mix(project_path: str) -> int:
     return 0
 
 
-def generate_one(prompt: str, fmt: str, use_llm: bool, render: bool) -> Path:
+def generate_one(prompt: str, fmt: str, use_llm: bool, render: bool, provider: str | None = None, duration: float | None = None) -> Path:
     progress("prompt", f"Parsing request for {fmt}")
-    project = generate_project(prompt, use_llm=use_llm, aspect=fmt)
+    project = generate_project(prompt, use_llm=use_llm, aspect=fmt, provider=provider, duration=duration)
     project_path = Path(project.metadata["project_dir"]) / "project.json"
+    progress("llm", f"provider={project.metadata.get('llm_provider', 'deterministic')} model={project.metadata.get('llm_model', '')}")
     progress("script", "Narration written and validated")
     progress("scenes", f"Planned {len(project.scenes)} animated scenes")
     progress("voice", str(project.metadata.get("narration_path", "real Kokoro audio required")))
@@ -216,8 +224,8 @@ def main() -> int:
     audio_doctor_parser = audio_actions.add_parser("doctor"); audio_doctor_parser.add_argument("--project", required=True)
     audio_actions.add_parser("assets")
     audio_mix_parser = audio_actions.add_parser("mix"); audio_mix_parser.add_argument("--project", required=True)
-    gen = sub.add_parser("generate"); gen.add_argument("--prompt", required=True); gen.add_argument("--format", default="16:9", choices=["16:9", "9:16", "both"]); gen.add_argument("--use-llm", action="store_true")
-    demo = sub.add_parser("demo"); demo.add_argument("--format", default="both", choices=["16:9", "9:16", "both"])
+    gen = sub.add_parser("generate"); gen.add_argument("--prompt", required=True); gen.add_argument("--duration", type=float); gen.add_argument("--format", default="16:9", choices=["16:9", "9:16", "both"]); gen.add_argument("--provider", choices=["groq", "ollama"]); gen.add_argument("--use-llm", action="store_true")
+    demo = sub.add_parser("demo"); demo.add_argument("--format", default="both", choices=["16:9", "9:16", "both"]); demo.add_argument("--provider", choices=["groq", "ollama"])
     render = sub.add_parser("render"); render.add_argument("--project", required=True); render.add_argument("--format", choices=["16:9", "9:16"]); render.add_argument("--preview", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -259,12 +267,13 @@ def main() -> int:
         prompt = "Explain how database indexing works in 30 seconds. Make it funny, energetic and beginner-friendly. Use colourful 2D vector animations and a male narrator."
         formats = ["16:9", "9:16"] if args.format == "both" else [args.format]
         for fmt in formats:
-            generate_one(prompt, fmt, use_llm=True, render=True)
+            generate_one(prompt, fmt, use_llm=True, render=True, provider=args.provider)
         return 0
     if args.command == "generate":
         formats = ["16:9", "9:16"] if args.format == "both" else [args.format]
+        use_llm = args.use_llm or args.provider is not None or settings.llm_provider in {"groq", "ollama"}
         for fmt in formats:
-            generate_one(args.prompt, fmt, use_llm=args.use_llm, render=True)
+            generate_one(args.prompt, fmt, use_llm=use_llm, render=True, provider=args.provider, duration=args.duration)
         return 0
     if args.command == "render":
         outputs = render_project(args.project, args.format, args.preview)

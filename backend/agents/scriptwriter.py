@@ -5,12 +5,14 @@ import logging
 import re
 from typing import Any
 
+from backend.agents.llm_schemas import PromptInterpretation, ScriptDraft
+from backend.llm.providers import invoke_json
 from backend.tools.timing_tools import estimate_narration_duration
 
 log = logging.getLogger(__name__)
 
 
-def interpret_prompt(prompt: str) -> dict[str, Any]:
+def _deterministic_interpretation(prompt: str) -> dict[str, Any]:
     import re
 
     lower = prompt.lower()
@@ -38,6 +40,32 @@ def interpret_prompt(prompt: str) -> dict[str, Any]:
         "voice": voice,
         "raw_prompt": prompt,
     }
+
+
+def interpret_prompt(prompt: str, use_llm: bool = False, provider: str | None = None) -> dict[str, Any]:
+    deterministic = _deterministic_interpretation(prompt)
+    if not use_llm:
+        return deterministic
+    from langchain_core.messages import HumanMessage
+
+    instruction = {
+        "task": "Interpret a raw video idea for a local vector animation pipeline.",
+        "raw_prompt": prompt,
+        "defaults": deterministic,
+        "constraints": ["duration must be 10-180 seconds", "format must be 16:9, 9:16, or both", "preserve technical topic wording", "do not invent facts"],
+        "return_schema": "duration_second, format, topic, audience, tone, style, voice",
+    }
+    response = invoke_json(
+        [HumanMessage(content=json.dumps(instruction))],
+        schema=PromptInterpretation,
+        provider=provider,
+        temperature=0.0,
+        cache_payload={"stage": "idea_interpreter", "prompt": prompt, "schema_version": "1"},
+    )
+    plan = response.data.model_dump(mode="json") if isinstance(response.data, PromptInterpretation) else PromptInterpretation.model_validate(response.data).model_dump(mode="json")
+    plan["raw_prompt"] = prompt
+    plan["_llm"] = response.metadata()
+    return plan
 
 
 def fallback_script(topic: str, duration_second: float, tone: list[str] | None = None) -> str:
@@ -73,31 +101,27 @@ def fit_script_to_duration(script: str, duration_second: float) -> str:
     return " ".join(selected) or script
 
 
-def write_script(plan: dict[str, Any], use_llm: bool = False) -> str:
+def write_script(plan: dict[str, Any], use_llm: bool = False, provider: str | None = None) -> str:
     if use_llm:
-        try:
-            from langchain_ollama import ChatOllama
-            from langchain_core.messages import HumanMessage
-            model = ChatOllama(model="qwen2.5:7b", temperature=0.2, format="json")
-            instruction = {
-                "task": "Write a technically accurate short narration for a vector animation video.",
-                "plan": plan,
-                "constraints": ["No invented statistics", "beginner friendly", "return JSON with script only"],
-            }
-            response = model.invoke([HumanMessage(content=json.dumps(instruction))])
-            content = response.content
-            if isinstance(content, list):
-                raw = "".join(item.get("text", "") if isinstance(item, dict) else str(item) for item in content)
-            else:
-                raw = content if isinstance(content, str) else str(content)
-            data = json.loads(raw)
-            candidate_value = data.get("script", "")
-            if isinstance(candidate_value, list):
-                candidate_value = " ".join(str(item) for item in candidate_value)
-            candidate = str(candidate_value).strip()
-            if candidate and estimate_narration_duration(candidate) <= plan["duration_second"] * 1.25:
-                return fit_script_to_duration(candidate, plan["duration_second"])
-        except Exception as exc:  # local service/model is optional
-            log.warning("Ollama scriptwriter unavailable; using deterministic script: %s", exc)
+        from langchain_core.messages import HumanMessage
+        instruction = {
+            "task": "Write a technically accurate short narration for a vector animation video.",
+            "plan": {key: value for key, value in plan.items() if not key.startswith("_")},
+            "constraints": ["No invented statistics", "beginner friendly", "strong opening and memorable ending", "return JSON with script only"],
+        }
+        response = invoke_json(
+            [HumanMessage(content=json.dumps(instruction))],
+            schema=ScriptDraft,
+            provider=provider,
+            temperature=0.2,
+            cache_payload={"stage": "scriptwriter", "plan": instruction["plan"], "schema_version": "1"},
+        )
+        candidate_value = response.data.script if isinstance(response.data, ScriptDraft) else ScriptDraft.model_validate(response.data).script
+        candidate = str(candidate_value).strip()
+        if not candidate:
+            raise ValueError("LLM scriptwriter returned an empty script.")
+        if estimate_narration_duration(candidate) > plan["duration_second"] * 1.25:
+            log.info("LLM script exceeded target duration; shortening at sentence boundaries.")
+        return fit_script_to_duration(candidate, plan["duration_second"])
     return fit_script_to_duration(fallback_script(plan["topic"], plan["duration_second"], plan.get("tone")), plan["duration_second"])
 

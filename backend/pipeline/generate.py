@@ -66,9 +66,11 @@ def _select_sfx(project_scenes, library: SfxLibrary) -> tuple[list[SfxCue], list
     return cues, assets, sorted(set(missing))
 
 
-def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bool = False, generate_audio: bool = True, aspect: str | None = None) -> Project:
+def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bool = False, generate_audio: bool = True, aspect: str | None = None, provider: str | None = None, duration: float | None = None) -> Project:
     settings.ensure_directories()
-    result = generation_graph.invoke({"prompt": prompt, "use_llm": use_llm})
+    if duration is not None and not 10 <= duration <= 180:
+        raise ValueError("duration must be between 10 and 180 seconds")
+    result = generation_graph.invoke({"prompt": prompt, "use_llm": use_llm, "provider": provider or settings.llm_provider, "duration_override": duration})
     plan = result["plan"]
     target_aspect = aspect or plan.get("format", "16:9")
     if target_aspect == "both":
@@ -127,7 +129,7 @@ def build_project(prompt: str, output_dir: str | Path | None = None, use_llm: bo
         narrator={"voice": plan.get("voice", settings.tts_voice), "speed": settings.tts_speed}, script=result["script"], scenes=scenes,
         narration_segments=segments, subtitles=subtitles, character_identities=[identity], sound_effect_cues=cues, audio_assets=assets, audio_events=audio_events,
         music=MusicConfig(enabled=settings.music_enabled, mood="playful_technology" if "energetic" in plan.get("tone", []) else "technical", volume=settings.music_volume, ducking=settings.music_ducking_enabled),
-        metadata={"plan": plan, "project_dir": str(project_dir), "audio_ready": generate_audio, "missing_sfx_requirements": missing_sfx},
+        metadata={"plan": plan, "project_dir": str(project_dir), "audio_ready": generate_audio, "missing_sfx_requirements": missing_sfx, "planning_stages": result.get("stage_log", []), "llm_provider": plan.get("_llm", {}).get("provider", provider or settings.llm_provider), "llm_model": plan.get("_llm", {}).get("model", settings.groq_model if (provider or settings.llm_provider) == "groq" else settings.ollama_model), "llm_scene_director": plan.get("_llm_scene_director", {})},
     )
     if generate_audio:
         narration_clips = [AudioClip(segment.audio_path, segment.start_second, settings.narration_volume, "narration") for segment in segments if segment.audio_path]
@@ -156,10 +158,10 @@ def save_project(project: Project, path: str | Path) -> Path:
     return target
 
 
-def generate_project(prompt: str, project_path: str | Path | None = None, use_llm: bool = False, generate_audio: bool = True, aspect: str | None = None) -> Project:
+def generate_project(prompt: str, project_path: str | Path | None = None, use_llm: bool = False, generate_audio: bool = True, aspect: str | None = None, provider: str | None = None, duration: float | None = None) -> Project:
     requested = Path(project_path) if project_path else None
     project_dir = requested.parent if requested and requested.suffix.lower() == ".json" else requested
-    project = build_project(prompt, output_dir=project_dir, use_llm=use_llm, generate_audio=generate_audio, aspect=aspect)
+    project = build_project(prompt, output_dir=project_dir, use_llm=use_llm, generate_audio=generate_audio, aspect=aspect, provider=provider, duration=duration)
     destination = requested if requested and requested.suffix.lower() == ".json" else Path(project.metadata["project_dir"]) / "project.json"
     save_project(project, destination)
     _write_artifacts(project, Path(project.metadata["project_dir"]))
