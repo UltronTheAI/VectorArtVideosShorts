@@ -10,6 +10,27 @@ from backend.tools.timing_tools import estimate_narration_duration, seconds_to_f
 
 log = logging.getLogger(__name__)
 
+SUPPORTED_EXPRESSIONS = {"happy", "confused", "surprised", "angry", "frustrated", "neutral"}
+
+
+def normalize_expression(value: object, default: str = "neutral") -> str:
+    """Map descriptive LLM wording to the finite character-rig vocabulary."""
+    text = str(value or "").strip().lower().replace("-", " ")
+    if text in SUPPORTED_EXPRESSIONS:
+        return text
+    aliases = {
+        "joyful": "happy", "cheerful": "happy", "excited": "surprised", "astonished": "surprised",
+        "shocked": "surprised", "curious": "confused", "puzzled": "confused", "uncertain": "confused",
+        "annoyed": "frustrated", "slightly frustrated": "frustrated", "stressed": "frustrated",
+        "mad": "angry", "calm": "neutral", "focused": "neutral", "serious": "neutral",
+    }
+    if text in aliases:
+        return aliases[text]
+    for candidate in SUPPORTED_EXPRESSIONS:
+        if candidate in text:
+            return candidate
+    return default if default in SUPPORTED_EXPRESSIONS else "neutral"
+
 
 def split_script(script: str, target_duration: float, fps: int = 30) -> list[dict[str, Any]]:
     chunks = [part.strip() for part in re.split(r"(?<=[.!?])\s+", script) if part.strip()] or [script.strip()]
@@ -82,11 +103,10 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
             hint = hints[index]
             title = str(hint.get("title") or title)
             environment = str(hint.get("environment") or environment)
-            expression = str(hint.get("character_expression") or expression)
+            expression = normalize_expression(hint.get("character_expression"), expression)
             if environment not in SUPPORTED_ENVIRONMENTS:
                 environment = blueprint[index][1]
-        if expression == "curious":
-            expression = "confused"
+        expression = normalize_expression(expression)
         characters = [CharacterSpec(id="developer", position=Vec2(x=24 if index != 2 else 72, y=68), expression=expression)]
         objects: list[VisualObject] = []
         actions = [
