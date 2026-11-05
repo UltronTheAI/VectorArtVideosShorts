@@ -7,4 +7,5 @@ soundfile>=0.12
 pytest>=8.0
 kokoro>=0.9
 torch>=2.2
+python-dotenv>=1.0
 

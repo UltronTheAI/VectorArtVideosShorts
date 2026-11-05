@@ -90,6 +90,7 @@ outputs/<project-id>/
   narration.wav
   final_audio.wav
   subtitles.srt
+  audio-manifest.json
   asset-attribution.json
   landscape.mp4
   portrait.mp4
@@ -101,18 +102,53 @@ Remotion receives a generated `remotion-props-landscape.json` or `remotion-props
 
 VectorForge does not generate or scrape sound effects. `assets/sfx/manifest.json` is a managed local catalogue. Each asset needs an existing local file and explicit metadata: ID, category, tags, content hash, source URL, author, licence, attribution requirement, and commercial-use eligibility. Noncommercial licences are never marked commercial-use.
 
-Supported categories include click, pop, whoosh, typing, impact, error, success, glitch, footsteps, laughter, sigh, transition, ambience, and dramatic_hit.
+Supported categories include click, pop, whoosh, typing, keyboard, impact, error, failure, success, glitch, footsteps, laughter, sigh, transition, ambience, dramatic_hit, and background_music.
 
 Freesound access uses its official API only:
 
 ```powershell
 $env:FREESOUND_API_KEY = "your-key"
 python -m backend.main sfx list
+python -m backend.main sfx search --query "cartoon pop"
+python -m backend.main sfx download --category pop --count 5
 python -m backend.main sfx validate
 python -m backend.main sfx attribution
 ```
 
 If an API result has no permitted download URL or no explicit licence metadata, it is rejected. For manually downloaded Pixabay or other legitimate assets, use the importer abstraction with verified metadata; never invent a source URL or licence.
+
+Pixabay does not provide a supported public audio search API in this project. Import a manually downloaded file with its original URL and licence metadata:
+
+```powershell
+python -m backend.main sfx import --file "C:\sounds\pop.mp3" --category pop --source-url "https://pixabay.com/..." --licence "Pixabay Content License" --author "author-name" --commercial-use
+```
+
+The importer validates audio, computes a SHA-256 content hash, deduplicates the local cache, indexes duration, and writes attribution metadata. No Pixabay API key is treated as proof of audio API access.
+
+## Audio diagnostics and repair
+
+Audio ownership is single-source: Kokoro segment WAVs become timeline events, the Python mixer produces `narration.wav` and `final_audio.wav`, Remotion renders video frames only, and FFmpeg muxes `final_audio.wav` once into the final MP4 as AAC. Remotion does not play narration or SFX independently, so audio is not duplicated.
+
+```powershell
+python -m backend.main audio assets
+python -m backend.main audio doctor --project "outputs\<project-id>\project.json"
+python -m backend.main audio mix --project "outputs\<project-id>\project.json"
+```
+
+To repair audio without regenerating the AI plan, run `audio mix` and render the existing project again:
+
+```powershell
+python -m backend.main audio mix --project "outputs\<project-id>\project.json"
+python -m backend.main render --project "outputs\<project-id>\project.json" --format 16:9
+```
+
+To inspect a finished file manually:
+
+```powershell
+ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate,channels -of default=nw=1 "outputs\<project-id>\landscape.mp4"
+```
+
+The command should report an AAC stream. If the project has valid `final_audio.wav` but an old MP4 is silent, rerendering the project performs a fresh atomic mux.
 
 ## Animation system
 

@@ -142,6 +142,7 @@ class AudioAsset(BaseModel):
     id: str
     path: str
     category: str
+    provider: str = "local"
     tags: list[str] = Field(default_factory=list)
     duration_second: float = Field(default=0, ge=0)
     content_hash: str = ""
@@ -152,6 +153,24 @@ class AudioAsset(BaseModel):
     commercial_use: bool = False
 
 
+class AudioEvent(BaseModel):
+    asset_id: str
+    type: Literal["narration", "sfx", "reaction", "music"]
+    path: str
+    start_ms: int = Field(ge=0)
+    duration_ms: int = Field(gt=0)
+    volume: float = Field(default=1.0, ge=0, le=2)
+
+
+class MusicConfig(BaseModel):
+    enabled: bool = False
+    mood: str = ""
+    volume: float = Field(default=0.12, ge=0, le=1)
+    ducking: bool = True
+    fade_in_ms: int = Field(default=500, ge=0)
+    fade_out_ms: int = Field(default=1200, ge=0)
+
+
 class SfxCue(BaseModel):
     id: str
     asset_id: str
@@ -159,6 +178,13 @@ class SfxCue(BaseModel):
     start_second: float = Field(ge=0)
     volume: float = Field(default=0.22, ge=0, le=1)
     audio_path: str | None = None
+
+
+class SoundRequest(BaseModel):
+    category: str
+    description: str
+    at_ms: int = Field(default=0, ge=0)
+    volume: float = Field(default=0.25, ge=0, le=1)
 
 
 class Scene(BaseModel):
@@ -176,6 +202,7 @@ class Scene(BaseModel):
     camera: CameraParams = CameraParams()
     narration_segment_ids: list[str] = Field(default_factory=list)
     sound_effect_ids: list[str] = Field(default_factory=list)
+    sound_requests: list[SoundRequest] = Field(default_factory=list)
     transition: TransitionParams = TransitionParams()
 
     @model_validator(mode="after")
@@ -220,6 +247,8 @@ class Project(BaseModel):
     subtitles: list[Subtitle] = Field(default_factory=list)
     sound_effect_cues: list[SfxCue] = Field(default_factory=list)
     audio_assets: list[AudioAsset] = Field(default_factory=list)
+    audio_events: list[AudioEvent] = Field(default_factory=list)
+    music: MusicConfig = MusicConfig()
     render: RenderSettings = RenderSettings()
     metadata: dict[str, Any] = Field(default_factory=dict)
 

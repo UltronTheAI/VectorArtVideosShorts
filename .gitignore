@@ -3,7 +3,11 @@ node_modules
 __pycache__
 *.pyc
 .env
+.env.local
+*.secret
 outputs/*
+assets/sfx/cache/
+assets/music/cache/
 public/generated/*
 public/audio/*
 !public/audio/.gitkeep

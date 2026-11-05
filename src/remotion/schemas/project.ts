@@ -22,7 +22,7 @@ export const SceneSchema = z.object({
   background_color: z.string(), text_elements: z.array(TextElementSchema), visual_objects: z.array(VisualObjectSchema),
   characters: z.array(CharacterSchema), actions: z.array(ActionSchema), animation: z.record(z.string(), z.unknown()),
   camera: z.record(z.string(), z.unknown()), narration_segment_ids: z.array(z.string()),
-  sound_effect_ids: z.array(z.string()), transition: z.record(z.string(), z.unknown()),
+  sound_effect_ids: z.array(z.string()), sound_requests: z.array(z.unknown()).default([]), transition: z.record(z.string(), z.unknown()),
 });
 export const NarrationSegmentSchema = z.object({
   id: z.string(), text: z.string(), start_second: z.number(), duration_second: z.number(), audio_path: z.string().nullable().optional(),
@@ -35,7 +35,8 @@ export const ProjectSchema = z.object({
   narrator: z.object({voice: z.string(), language: z.string(), speed: z.number(), model: z.string(), model_version: z.string()}),
   script: z.string(), scenes: z.array(SceneSchema), narration_segments: z.array(NarrationSegmentSchema),
   subtitles: z.array(z.object({id: z.string(), text: z.string(), start_frame: z.number(), end_frame: z.number(), emphasis: z.array(z.string())})),
-  sound_effect_cues: z.array(z.unknown()), audio_assets: z.array(z.unknown()), render: z.record(z.string(), z.unknown()), metadata: z.record(z.string(), z.unknown()),
+  sound_effect_cues: z.array(z.unknown()), audio_assets: z.array(z.unknown()), audio_events: z.array(z.unknown()).default([]),
+  music: z.record(z.string(), z.unknown()).default({}), render: z.record(z.string(), z.unknown()), metadata: z.record(z.string(), z.unknown()),
 });
 export const ProjectPropsSchema = z.object({project: ProjectSchema});
 export type Project = z.infer<typeof ProjectSchema>;

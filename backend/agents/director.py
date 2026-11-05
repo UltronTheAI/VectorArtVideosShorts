@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Any
 
-from backend.schemas import Action, AnimationParams, CameraParams, CharacterSpec, SUPPORTED_ENVIRONMENTS, Scene, SceneType, TextElement, Vec2, VisualObject
+from backend.schemas import Action, AnimationParams, CameraParams, CharacterSpec, SoundRequest, SUPPORTED_ENVIRONMENTS, Scene, SceneType, TextElement, Vec2, VisualObject
 from backend.tools.timing_tools import estimate_narration_duration, seconds_to_frames
 
 log = logging.getLogger(__name__)
@@ -109,6 +109,7 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
         expression = normalize_expression(expression)
         characters = [CharacterSpec(id="developer", position=Vec2(x=24 if index != 2 else 72, y=68), expression=expression)]
         objects: list[VisualObject] = []
+        sound_requests: list[SoundRequest] = []
         actions = [
             Action(target="developer", type="blink", start_frame=20, duration_frames=min(18, duration_frames - 1)),
             Action(target="developer", type="nod", start_frame=min(50, duration_frames - 1), duration_frames=min(36, max(1, duration_frames - min(50, duration_frames - 1)))),
@@ -116,12 +117,18 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
         if scene_type == SceneType.DEVELOPER_SEARCH:
             objects = [VisualObject(id="monitor", kind="computer_monitor", position=Vec2(x=67, y=51), size=Vec2(x=34, y=27), data={"query": "SELECT * FROM records WHERE id = 42"})]
             actions += [Action(target="developer", type="point", start_frame=min(82, duration_frames - 1), duration_frames=min(45, max(1, duration_frames - min(82, duration_frames - 1))))]
+            sound_requests.append(SoundRequest(category="typing", description="short keyboard typing", at_ms=500, volume=0.16))
         elif scene_type == SceneType.FULL_SCAN:
             objects = [VisualObject(id="records", kind="database_table", position=Vec2(x=61, y=57), size=Vec2(x=58, y=32), data={"count": 12, "match_index": 9})]
             actions += [Action(target="records", type="highlight", start_frame=min(20, duration_frames - 1), duration_frames=max(1, duration_frames - min(20, duration_frames - 1)), metadata={"stagger": 8})]
+            sound_requests.append(SoundRequest(category="click", description="fast digital record click", at_ms=650, volume=0.22))
+            sound_requests.append(SoundRequest(category="failure", description="soft search failure", at_ms=2800, volume=0.18))
         elif scene_type in {SceneType.INDEX_INTRO, SceneType.INDEXED_SEARCH}:
             objects = [VisualObject(id="btree", kind="btree", position=Vec2(x=58, y=55), size=Vec2(x=54, y=40), data={"levels": 3, "path": [0, 1, 3]})]
             actions += [Action(target="btree", type="draw_path", start_frame=min(18, duration_frames - 1), duration_frames=max(1, duration_frames - min(18, duration_frames - 1)), metadata={"path": [0, 1, 3]})]
+            sound_requests.append(SoundRequest(category="whoosh", description="short cartoon transition", at_ms=350, volume=0.25))
+            if scene_type == SceneType.INDEXED_SEARCH:
+                sound_requests.append(SoundRequest(category="success", description="small digital success pop", at_ms=2800, volume=0.2))
         elif scene_type == SceneType.COMPARISON:
             objects = [VisualObject(id="comparison", kind="comparison_panel", position=Vec2(x=50, y=56), size=Vec2(x=78, y=35), data={"left": "many records", "right": "few branches"})]
         else:
@@ -134,7 +141,7 @@ def direct_scenes(plan: dict[str, Any], script: str, fps: int = 30, use_llm: boo
             visual_objects=objects, characters=characters, actions=actions,
             animation=AnimationParams(enter="fade", exit="fade", emphasis="highlight" if scene_type in {SceneType.FULL_SCAN, SceneType.INDEXED_SEARCH} else "none"),
             camera=CameraParams(start=Vec2(x=0, y=0), end=Vec2(x=0, y=0), zoom_start=1.0, zoom_end=1.06 if scene_type in {SceneType.DEVELOPER_SEARCH, SceneType.INDEX_INTRO} else 1.0),
-            narration_segment_ids=[x["id"] for x in group], sound_effect_ids=[],
+            narration_segment_ids=[x["id"] for x in group], sound_effect_ids=[], sound_requests=sound_requests,
         ))
         cursor_frame += duration_frames
     return scenes, segments

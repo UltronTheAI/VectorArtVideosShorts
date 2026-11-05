@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from backend.audio.mixer import AudioMixError, validate_audio_file
 from backend.config import settings
 from backend.schemas import Project
 
@@ -35,6 +36,12 @@ def _require_audio(project: Project) -> Path:
     source = Path(audio_path)
     if not source.exists() or source.stat().st_size < 128:
         raise RenderError(f"Project audio is missing or invalid: {source}")
+    try:
+        stats = validate_audio_file(source, require_audible=True)
+    except AudioMixError as exc:
+        raise RenderError(str(exc)) from exc
+    if abs(float(stats["duration_second"]) - project.actual_duration_second) > 0.15:
+        raise RenderError(f"Final audio duration {stats['duration_second']:.3f}s does not match project duration {project.actual_duration_second:.3f}s.")
     return source
 
 
@@ -42,19 +49,22 @@ def _mux_audio(video: Path, audio: Path, project: Project) -> None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RenderError("FFmpeg is required to mux final_audio.wav into an AAC MP4. Install FFmpeg and add it to PATH.")
-    temp = video.with_name("video-with-audio.mp4")
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise RenderError("ffprobe is required to verify the AAC stream after muxing.")
+    temp = video.with_name(f".{video.stem}.muxing.tmp.mp4")
     duration = f"{project.actual_duration_second:.6f}"
-    command = [ffmpeg, "-y", "-i", str(video), "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-af", "apad", "-t", duration, str(temp)]
+    command = [ffmpeg, "-y", "-i", str(video), "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", str(settings.audio_sample_rate), "-af", "apad", "-t", duration, "-movflags", "+faststart", str(temp)]
     result = subprocess.run(command, cwd=settings.root, capture_output=True, text=True, check=False)
     if result.returncode != 0 or not temp.exists():
+        temp.unlink(missing_ok=True)
         raise RenderError(f"FFmpeg audio mux failed: {result.stderr[-1600:]}")
+    probe = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,channels,sample_rate", "-of", "json", str(temp)], capture_output=True, text=True, check=False)
+    if probe.returncode != 0 or '"codec_name": "aac"' not in probe.stdout.lower():
+        temp.unlink(missing_ok=True)
+        raise RenderError(f"Rendered MP4 does not contain the required AAC audio stream: {probe.stderr or probe.stdout}")
     video.unlink()
     temp.replace(video)
-    ffprobe = shutil.which("ffprobe")
-    if ffprobe:
-        probe = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1", str(video)], capture_output=True, text=True, check=False)
-        if probe.returncode != 0 or "aac" not in probe.stdout.lower():
-            raise RenderError("Rendered MP4 does not contain the required AAC audio stream.")
 
 
 def render_project(project_path: str | Path, format_name: str | None = None, preview: bool = False) -> list[Path]:

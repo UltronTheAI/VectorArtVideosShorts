@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "assets": [],
-  "supported_categories": ["click", "pop", "whoosh", "typing", "impact", "error", "success", "glitch", "footsteps", "laughter", "sigh", "transition", "ambience", "dramatic_hit"],
+  "supported_categories": ["click", "pop", "whoosh", "typing", "keyboard", "impact", "error", "failure", "success", "glitch", "footsteps", "laughter", "sigh", "transition", "ambience", "dramatic_hit", "background_music"],
   "notes": "Add only real assets with verified licence metadata. Empty means no optional SFX are selected; VectorForge never fabricates substitute effects or licence terms."
 }
 
