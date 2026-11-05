@@ -1,14 +1,14 @@
 # VectorForge
 
-VectorForge is a local-first MVP for turning a natural-language idea into a faceless 2D vector animation video. It plans with a deterministic LangGraph workflow, optionally improves the script with local Ollama/Qwen, generates cached Kokoro narration, selects only explicitly catalogued sound effects, and renders an aspect-ratio-aware Remotion composition.
+VectorForge is a local-only pipeline for turning a natural-language technical idea into an animated, faceless 2D vector video. The pipeline is intentionally strict: a normal generation run requires real Kokoro speech and a valid final audio timeline. It never substitutes silence for narration.
 
 ## Architecture
 
-`backend/` owns orchestration, Pydantic schemas, timing, local TTS, audio mixing, SFX metadata, and the CLI. `src/remotion/` owns the typed Zod mirror of the project format and the SVG/HTML vector composition. The project JSON is the contract between Python planning and Remotion rendering. LLM output is never executed; it is parsed and validated as data.
+The Python side interprets the prompt, writes and validates the narration, plans supported environments/characters/actions with LangGraph and optional local Qwen, synthesizes segment WAVs with Kokoro, retrieves only catalogued licensed SFX, composes `narration.wav` and `final_audio.wav`, writes subtitles/SRT, and passes one JSON contract to Remotion.
 
-The pipeline is: prompt interpretation → script writing → scene direction → Pydantic validation → segment TTS/cache → measured timeline → subtitles → Remotion render.
+The Remotion side accepts exactly `{ "project": { ... } }`. Zod validates the project before metadata is calculated. Duration, FPS, width, height, scenes, actions, environments, character rigs, subtitles, and audio metadata all come from that project. The development fixture is used only as Composition `defaultProps` when opening the Remotion project without external props; invalid supplied props throw an explicit error.
 
-## Windows setup
+## Windows installation
 
 ```powershell
 py -3.11 -m venv .venv
@@ -17,61 +17,116 @@ python -m pip install -r requirements.txt
 npm install
 ```
 
-Install FFmpeg and add its `bin` directory to PATH. Install Ollama, start it, then download the local model:
+Install FFmpeg and `ffprobe`, then add their `bin` directory to PATH. Install Ollama and pull the local planner model:
 
 ```powershell
 ollama pull qwen2.5:7b
 ```
 
-Kokoro is optional for project/timeline tests but required for real narration. In the active venv install the Kokoro package, PyTorch, SoundFile, and NumPy according to the current Kokoro Windows instructions. Phonemisation packages can require a separate espeak-ng installation; verify that `python -c "from kokoro import KPipeline; print('ok')"` succeeds. The adapter defaults to `am_michael`; use `KOKORO_VOICE=am_adam` for the alternate male voice.
-
-Run:
+Run the TTS setup guidance:
 
 ```powershell
-python -m backend.main doctor
-python -m backend.main voices
+python -m backend.main setup-tts
 ```
 
-## First demo
+Kokoro requires the `kokoro` Python package, a compatible PyTorch build, NumPy, SoundFile, and an espeak-ng installation suitable for Windows phonemisation. Set `KOKORO_MODEL_DIR` to the local Hugging Face cache directory. On the first setup run, set `KOKORO_OFFLINE=0` so Kokoro can populate the Kokoro-82M cache; after the weights and voice files are present, set `KOKORO_OFFLINE=1` for offline inference. The default male voice is `am_michael`; `am_adam` is also supported.
+
+```powershell
+$env:KOKORO_MODEL_DIR = "C:\Models\kokoro"
+$env:KOKORO_OFFLINE = "0"   # first run only, if weights are not cached
+python -m backend.main doctor
+$env:KOKORO_OFFLINE = "1"
+```
+
+## Local model and audio configuration
+
+Copy `.env.example` to `.env` or set the variables in PowerShell:
+
+```text
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b
+KOKORO_VOICE=am_michael
+KOKORO_SPEED=1.0
+KOKORO_LANG=a
+KOKORO_MODEL=Kokoro-82M
+KOKORO_MODEL_VERSION=82M
+KOKORO_MODEL_DIR=C:\Models\kokoro
+KOKORO_OFFLINE=1
+```
+
+Kokoro cache keys include text, voice, speed, model/version, language, delivery metadata, and pause metadata. Cached WAVs are checked for corruption, zero length, and effective silence; legacy ID-named placeholders are not accepted.
+
+## First video
+
+The default demo uses the actual local pipeline and stops with a nonzero exit code if Kokoro, FFmpeg, Remotion, or required project data is unavailable:
 
 ```powershell
 python -m backend.main demo --format both
 ```
 
-This writes project JSON under `outputs/demo/`. With Node/Remotion available it renders landscape and portrait MP4s under `outputs/<project-id>/`. The pipeline mixes cached segment WAVs into `public/audio/<project-id>-voice.wav` and muxes AAC audio with FFmpeg when FFmpeg is available. If Kokoro is not installed or model weights are not locally available, the demo still exercises project generation and rendering with a clearly marked quiet timing placeholder; install/cache Kokoro before publishing. Missing optional SFX never block rendering.
-
-To generate a custom project, optionally allowing local Qwen to improve the script:
+Custom prompt generation:
 
 ```powershell
-python -m backend.main generate --prompt "Explain database indexing in 30 seconds. Make it funny and beginner-friendly." --format both --use-llm
-python -m backend.main render --project outputs/generated/project-16x9.json
+python -m backend.main generate --prompt "Explain how database indexing works in 30 seconds with colourful animation and a male narrator" --format both --use-llm
 ```
 
-`--use-llm` is bounded by the deterministic fallback: if Ollama is unavailable or returns invalid JSON, the application uses the local scriptwriter and still validates the result.
+`--use-llm` enables local Qwen script and scene-hint planning. All output remains constrained by Pydantic schemas and supported scene/action/environment lists. If Qwen is unavailable, the deterministic fallback is still a multi-scene visual plan; it is never a title-only fallback.
+
+To render an existing generated project:
+
+```powershell
+python -m backend.main render --project outputs\<project-id>\project.json --format 16:9
+python -m backend.main render --project outputs\<project-id>\project.json --format 9:16
+```
+
+## Output layout
+
+```text
+outputs/<project-id>/
+  project.json
+  script.json
+  narration.wav
+  final_audio.wav
+  subtitles.srt
+  asset-attribution.json
+  landscape.mp4
+  portrait.mp4
+```
+
+Remotion receives a generated `remotion-props-landscape.json` or `remotion-props-portrait.json` containing `{ "project": ... }`. The final mux uses AAC, preserves the full video duration, pads audio when necessary, and verifies the AAC stream when `ffprobe` is available. It does not use `-shortest`.
 
 ## Sound effects and licensing
 
-`assets/sfx/manifest.json` is intentionally empty. Add WAV files only when you have verified their licence. Each entry must include `id`, `path`, `category`, `tags`, `duration_second`, `source_url`, `author`, `licence`, `attribution_required`, and `commercial_use`. Supported categories are click, pop, whoosh, typing, success, error, dramatic_hit, laughter, sigh, and transition. VectorForge does not scrape sound libraries and does not assume that “free download” means commercial use.
+VectorForge does not generate or scrape sound effects. `assets/sfx/manifest.json` is a managed local catalogue. Each asset needs an existing local file and explicit metadata: ID, category, tags, content hash, source URL, author, licence, attribution requirement, and commercial-use eligibility. Noncommercial licences are never marked commercial-use.
+
+Supported categories include click, pop, whoosh, typing, impact, error, success, glitch, footsteps, laughter, sigh, transition, ambience, and dramatic_hit.
+
+Freesound access uses its official API only:
 
 ```powershell
+$env:FREESOUND_API_KEY = "your-key"
 python -m backend.main sfx list
 python -m backend.main sfx validate
+python -m backend.main sfx attribution
 ```
 
-## Extending animation templates
+If an API result has no permitted download URL or no explicit licence metadata, it is rejected. For manually downloaded Pixabay or other legitimate assets, use the importer abstraction with verified metadata; never invent a source URL or licence.
 
-Add a supported scene type to `backend/schemas/models.py`, implement its deterministic visual branch in `src/remotion/Video.tsx`, and add any reusable primitive in `src/remotion/components/primitives.tsx`. Update `backend/tools/scene_tools.py` and tests. Keep positions percentage-based so 16:9 and 9:16 compositions use intentional layouts rather than a crop.
+## Animation system
 
-## Testing
+Scenes use deterministic frame-based SVG/React components: expressive `VectorCharacter` rigs, face/body/arms/legs, speech bubbles, developer desks, server rooms, whiteboards, networks, database tables, B-tree nodes, connector paths, cursors, highlight boxes, comparison panels, labels, progress bars, particles, camera pan/zoom, and subtitle safe zones.
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-npx tsc --noEmit
-```
+The database reference demo contains six scenes: developer search, full collection scan, index introduction, indexed traversal, comparison, and ending. Actions are validated and include move, point, blink, nod, frustrated, surprised, celebrate, draw_path, highlight, camera pan, and camera zoom. Characters have visible expression variants and simple speech-active mouth motion.
 
-The deterministic Python tests do not require Ollama, Kokoro, FFmpeg, or sound assets. `doctor` reports missing integration dependencies exactly. The repository's original `test_kokoro.py` remains a manual Kokoro smoke script and requires the optional package.
+Landscape uses wide side-by-side compositions at 1920×1080. Portrait uses a stacked composition at 1080×1920 with larger character scale, shorter text lines, and subtitles above the lower safe zone. It is not a crop of the landscape layout.
 
-## Current limitations
+## Troubleshooting
 
-The MVP uses segment-level subtitle timing, not word alignment. Emotion metadata maps to speed/segmentation hints; Kokoro does not provide arbitrary acting controls. The scene director supports a small deterministic template set. SFX are optional until licensed files are catalogued. Rendering requires a working Node/Remotion installation and FFmpeg may be needed by the host for final audio workflows. No cloud API or paid service is required.
+- Silent narration: check `python -m backend.main doctor`, `KOKORO_MODEL_DIR`, `KOKORO_OFFLINE`, espeak-ng, and the selected voice. Delete only the affected `tts-<hash>.wav` cache after fixing the dependency; do not create a replacement WAV.
+- Static or title-only render: inspect the generated `project.json` scene count and `remotion-props-*.json` wrapper. Remotion now rejects invalid external props instead of silently using the preview fixture.
+- Missing SFX: run `python -m backend.main sfx validate`. Add a real licensed asset and complete metadata; the generator records missing optional categories rather than fabricating audio.
+- FFmpeg failure: verify both `ffmpeg` and `ffprobe` resolve in PowerShell. Final MP4 muxing requires an AAC stream and will fail explicitly if it cannot be created.
 
+## Limitations
+
+Subtitles are segment-level, not word-level forced alignment. Kokoro controls delivery through supported speed, punctuation, pauses, and segment boundaries; emotion labels are planning metadata and do not guarantee acting. SFX retrieval requires either configured official API access or manually imported licensed assets. No cloud inference or paid API is required.

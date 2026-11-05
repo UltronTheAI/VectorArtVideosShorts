@@ -1,0 +1,23 @@
+import React from 'react';
+import {useCurrentFrame, useVideoConfig} from 'remotion';
+
+export const BackgroundLayer: React.FC<{color:string}> = ({color}) => <svg style={{position:'absolute',inset:0,width:'100%',height:'100%'}} viewBox="0 0 1000 1000" preserveAspectRatio="none"><rect width="1000" height="1000" fill={color}/><circle cx="110" cy="110" r="80" fill="rgba(255,255,255,.04)"/><circle cx="880" cy="760" r="150" fill="rgba(76,201,240,.06)"/></svg>;
+export const ForegroundLayer: React.FC = () => <div style={{position:'absolute',inset:0,pointerEvents:'none',boxShadow:'inset 0 -80px 100px rgba(0,0,0,.14)'}}/>;
+
+const DeveloperDesk: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none">
+  <rect x="70" y="145" width="210" height="140" rx="18" fill="#263A63"/><rect x="92" y="165" width="166" height="95" rx="8" fill="#0B1220"/><circle cx="172" cy="212" r="24" fill="#80ED99"/><path d="M135 212h74M172 175v74" stroke="#80ED99" strokeWidth="5"/>
+  <rect x="0" y="735" width="1000" height="265" fill="#8C5A3C"/><rect x="0" y="735" width="1000" height="22" fill="#FFD166"/><rect x="600" y="680" width="250" height="60" rx="12" fill="#172033"/><rect x="625" y="660" width="200" height="25" rx="8" fill="#F7FFF7"/><path d="M635 700h180" stroke="#4CC9F0" strokeWidth="5"/>
+</svg>;
+const ComputerWorkstation: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none"><rect x="610" y="165" width="300" height="205" rx="18" fill="#172033" stroke="#4CC9F0" strokeWidth="12"/><rect x="640" y="195" width="240" height="135" rx="8" fill="#081C2C"/><path d="M665 230h190M665 260h150M665 290h80" stroke="#80ED99" strokeWidth="9" strokeLinecap="round"/><rect x="720" y="370" width="80" height="230" fill="#263A63"/><ellipse cx="760" cy="600" rx="170" ry="30" fill="#FFD166"/></svg>;
+const ServerRoom: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none"><path d="M0 110L500 40L1000 110V1000H0Z" fill="rgba(8,28,44,.55)"/><g fill="#263A63" stroke="#4CC9F0" strokeWidth="6">{[120,330,540,750].map((x)=><rect key={x} x={x} y="250" width="130" height="470" rx="12"/>)}</g><g fill="#80ED99">{[150,360,570,780].map((x)=><circle key={x} cx={x} cy="310" r="12"/>)}</g><path d="M120 760H880" stroke="#FFD166" strokeWidth="18"/></svg>;
+const Whiteboard: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none"><rect x="100" y="170" width="800" height="540" rx="24" fill="#FFFDF5"/><path d="M220 470L400 270L570 470L740 270M400 270V610M570 470V610" fill="none" stroke="#172033" strokeWidth="9" strokeLinecap="round"/><circle cx="400" cy="270" r="26" fill="#F72585"/><circle cx="570" cy="470" r="26" fill="#80ED99"/><rect x="270" y="760" width="460" height="30" rx="15" fill="#FFD166"/></svg>;
+const Network: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none"><g stroke="#4CC9F0" strokeWidth="7" opacity=".8"><path d="M180 260L500 160L820 300L640 620L290 620L180 260M500 160L640 620M820 300L290 620" fill="none"/></g><g fill="#FFD166" stroke="#172033" strokeWidth="7"><circle cx="180" cy="260" r="34"/><circle cx="500" cy="160" r="45"/><circle cx="820" cy="300" r="34"/><circle cx="640" cy="620" r="34"/><circle cx="290" cy="620" r="34"/></g></svg>;
+const Office: React.FC = () => <svg viewBox="0 0 1000 1000" style={{position:'absolute',inset:0,width:'100%',height:'100%'}} preserveAspectRatio="none"><rect x="105" y="150" width="220" height="250" rx="12" fill="#80ED99"/><rect x="650" y="140" width="210" height="280" rx="12" fill="#FFD166"/><rect x="0" y="740" width="1000" height="260" fill="#263A63"/><path d="M200 740V610H800V740" fill="#8C5A3C"/></svg>;
+
+export const Environment: React.FC<{name:string;color:string}> = ({name,color}) => {
+  const frame = useCurrentFrame();
+  const {width} = useVideoConfig();
+  const parallax = Math.sin(frame / 50) * (width > 1200 ? 2 : 1);
+  const illustration = name === 'developer_desk' ? <DeveloperDesk/> : name === 'computer_workstation' ? <ComputerWorkstation/> : name === 'database_server_room' ? <ServerRoom/> : name === 'educational_whiteboard' ? <Whiteboard/> : name === 'digital_network' ? <Network/> : name === 'office_interior' ? <Office/> : <Network/>;
+  return <><BackgroundLayer color={color}/><div style={{position:'absolute',inset:0,transform:`translateX(${parallax}px)`}}>{illustration}</div><ForegroundLayer/></>;
+};

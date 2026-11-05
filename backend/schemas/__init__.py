@@ -1,12 +1,14 @@
 from .models import (
-    AspectRatio, AnimationParams, AudioAsset, CameraParams, NarrationSegment,
-    Project, RenderSettings, Resolution, Scene, SceneType, SfxCue, Subtitle,
-    TextElement, TransitionParams, Vec2, VisualObject,
+    Action, AspectRatio, AnimationParams, AudioAsset, CameraParams, CharacterSpec,
+    NarrationSegment, Project, RenderSettings, Resolution, Scene, SceneType,
+    SfxCue, Subtitle, TextElement, TransitionParams, Vec2, VisualObject,
+    SUPPORTED_ACTIONS, SUPPORTED_ENVIRONMENTS,
 )
 
 __all__ = [
-    "AspectRatio", "AnimationParams", "AudioAsset", "CameraParams", "NarrationSegment",
+    "Action", "AspectRatio", "AnimationParams", "AudioAsset", "CameraParams", "CharacterSpec", "NarrationSegment",
     "Project", "RenderSettings", "Resolution", "Scene", "SceneType", "SfxCue",
     "Subtitle", "TextElement", "TransitionParams", "Vec2", "VisualObject",
+    "SUPPORTED_ACTIONS", "SUPPORTED_ENVIRONMENTS",
 ]
 

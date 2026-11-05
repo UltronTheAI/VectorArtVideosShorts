@@ -16,6 +16,10 @@ class Settings:
     tts_voice: str = os.getenv("KOKORO_VOICE", "am_michael")
     tts_speed: float = float(os.getenv("KOKORO_SPEED", "1.0"))
     tts_lang: str = os.getenv("KOKORO_LANG", "a")
+    tts_model: str = os.getenv("KOKORO_MODEL", "Kokoro-82M")
+    tts_model_version: str = os.getenv("KOKORO_MODEL_VERSION", "82M")
+    tts_device: str = os.getenv("KOKORO_DEVICE", "cuda")
+    kokoro_model_dir: str = os.getenv("KOKORO_MODEL_DIR", "")
 
     @property
     def outputs(self) -> Path:

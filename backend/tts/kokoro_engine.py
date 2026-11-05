@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import logging
 import os
-import re
+import wave
 from pathlib import Path
 
 import numpy as np
@@ -13,61 +14,119 @@ from backend.audio.mixer import write_wav
 from backend.config import settings
 
 log = logging.getLogger(__name__)
+SUPPORTED_VOICES = {"am_michael", "am_adam"}
 
 
-class KokoroUnavailable(RuntimeError):
+class KokoroError(RuntimeError):
+    """A required local speech generation step failed."""
+
+
+class KokoroUnavailable(KokoroError):
     pass
 
 
 class KokoroEngine:
     def __init__(self, voice: str | None = None, speed: float | None = None, output_dir: str | Path | None = None):
         self.voice = voice or settings.tts_voice
-        self.speed = speed or settings.tts_speed
-        self.output_dir = Path(output_dir or settings.audio)
+        self.speed = float(speed or settings.tts_speed)
+        self.output_dir = Path(output_dir or settings.audio).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        if self.voice not in SUPPORTED_VOICES:
+            raise KokoroError(f"Unsupported Kokoro voice {self.voice!r}. Use one of: {', '.join(sorted(SUPPORTED_VOICES))}.")
+        if not 0.5 < self.speed <= 1.5:
+            raise KokoroError("Kokoro speed must be between 0.5 and 1.5.")
 
     @property
     def available(self) -> bool:
         return importlib.util.find_spec("kokoro") is not None
 
     @property
-    def model_download_allowed(self) -> bool:
-        # Kokoro may attempt a large Hugging Face download on first import. Keep
-        # the CLI deterministic/offline by requiring an explicit opt-in.
-        return os.getenv("VECTORFORGE_KOKORO_ALLOW_DOWNLOAD", "0").lower() in {"1", "true", "yes"}
+    def offline(self) -> bool:
+        return os.getenv("KOKORO_OFFLINE", "1").lower() not in {"0", "false", "no"}
 
-    def _cache_path(self, text: str) -> Path:
-        key = hashlib.sha256(f"{text}|{self.voice}|{self.speed}|Kokoro-82M".encode()).hexdigest()[:20]
+    def initialize(self) -> None:
+        if not self.available:
+            raise KokoroUnavailable(
+                "Kokoro is not installed. Install the local package, PyTorch, soundfile, and espeak-ng; "
+                "see README.md for Windows setup instructions."
+            )
+        if self.offline:
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        if os.getenv("KOKORO_MODEL_DIR"):
+            os.environ.setdefault("HF_HOME", os.getenv("KOKORO_MODEL_DIR", ""))
+
+    def _cache_path(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> Path:
+        payload = {
+            "text": text, "voice": self.voice, "speed": self.speed,
+            "model": settings.tts_model, "model_version": settings.tts_model_version,
+            "lang": settings.tts_lang, "pause_after_ms": pause_after_ms, "delivery": delivery,
+        }
+        key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
         return self.output_dir / f"tts-{key}.wav"
 
-    def synthesize(self, text: str, filename: str | None = None, allow_placeholder: bool = True) -> tuple[Path, float, bool]:
-        path = self.output_dir / filename if filename else self._cache_path(text)
+    @staticmethod
+    def _validate_wav(path: Path) -> float:
+        try:
+            with wave.open(str(path), "rb") as handle:
+                if handle.getnchannels() < 1 or handle.getframerate() <= 0 or handle.getnframes() <= 0:
+                    raise KokoroError(f"Invalid or empty cached WAV: {path}")
+                channels = handle.getnchannels()
+                frames = handle.readframes(handle.getnframes())
+                rate = handle.getframerate()
+            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+            if samples.size == 0 or not np.isfinite(samples).all() or float(np.max(np.abs(samples))) < 1e-4:
+                raise KokoroError(f"Cached WAV is silent or corrupt and will be regenerated: {path}")
+            return samples.size / (rate * channels)
+        except (OSError, wave.Error, ValueError) as exc:
+            raise KokoroError(f"Cannot read cached narration WAV {path}: {exc}") from exc
+
+    @staticmethod
+    def _prepare_text(text: str, pause_after_ms: int, delivery: str) -> str:
+        prepared = text.strip()
+        if not prepared:
+            raise KokoroError("Cannot synthesize an empty narration segment.")
+        if delivery in {"energetic", "urgent"} and not prepared.endswith(("!", "?", ".")):
+            prepared += "!"
+        if pause_after_ms >= 100:
+            prepared += " " + ("..." if pause_after_ms < 500 else "... ...")
+        return prepared
+
+    def synthesize(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> tuple[Path, float, bool]:
+        self.initialize()
+        prepared = self._prepare_text(text, pause_after_ms, delivery)
+        path = self._cache_path(prepared, pause_after_ms, delivery)
         if path.exists():
-            from backend.audio.sfx_library import index_audio_duration
-            return path, index_audio_duration(path), True
-        if self.available and self.model_download_allowed:
             try:
-                from kokoro import KPipeline
-                pipeline = KPipeline(lang_code=settings.tts_lang)
-                chunks = [audio for _, _, audio in pipeline(text, voice=self.voice, speed=self.speed, split_pattern=r"\n+")]
-                if chunks:
-                    audio = np.concatenate(chunks).astype(np.float32)
-                    write_wav(path, audio, 24000)
-                    return path, len(audio) / 24000, False
-            except Exception as exc:
-                log.warning("Kokoro generation failed: %s", exc)
-        if not allow_placeholder:
-            raise KokoroUnavailable("Kokoro is not installed or failed to generate audio")
-        # This is intentionally a quiet timing placeholder, never used as a sound effect.
-        words = len(re.findall(r"\b\w+\b", text))
-        duration = max(0.5, words / 145 * 60)
-        write_wav(path, np.zeros(int(duration * 24000), dtype=np.float32), 24000)
-        return path, duration, False
+                return path, self._validate_wav(path), True
+            except KokoroError:
+                path.unlink(missing_ok=True)
+        try:
+            from kokoro import KPipeline
+            pipeline = KPipeline(lang_code=settings.tts_lang, device=settings.tts_device)
+            chunks = [audio for _, _, audio in pipeline(prepared, voice=self.voice, speed=self.speed, split_pattern=r"\n+")]
+            if not chunks:
+                raise KokoroError("Kokoro returned no audio chunks.")
+            audio = np.concatenate(chunks).astype(np.float32)
+            write_wav(path, audio, 24000)
+            duration = self._validate_wav(path)
+            return path, duration, False
+        except KokoroError:
+            raise
+        except Exception as exc:
+            path.unlink(missing_ok=True)
+            raise KokoroError(
+                f"Kokoro synthesis failed for voice {self.voice}: {exc}. Verify cached Kokoro-82M weights, "
+                "espeak-ng, and the selected voice."
+            ) from exc
 
     def synthesize_segments(self, segments: list[dict]) -> list[dict]:
-        output = []
+        output: list[dict] = []
         for segment in segments:
-            path, duration, cached = self.synthesize(segment["text"], filename=f"{segment['id']}.wav")
-            output.append({**segment, "audio_path": str(path), "measured_duration_second": duration, "cached": cached})
+            voice = segment.get("voice", self.voice)
+            engine = self if voice == self.voice else KokoroEngine(voice=voice, speed=segment.get("speed", self.speed), output_dir=self.output_dir)
+            path, duration, cached = engine.synthesize(
+                segment["text"], pause_after_ms=int(segment.get("pause_after_ms", 0)),
+                delivery=segment.get("delivery", "neutral"),
+            )
+            output.append({**segment, "audio_path": str(path), "measured_duration_second": duration, "cached": cached, "voice": voice})
         return output
-

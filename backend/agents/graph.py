@@ -31,7 +31,7 @@ def build_generation_graph():
         return {"script": write_script(state["plan"], use_llm=state.get("use_llm", False))}
 
     def direct(state: GenerationState) -> GenerationState:
-        scenes, segments = direct_scenes(state["plan"], state["script"])
+        scenes, segments = direct_scenes(state["plan"], state["script"], use_llm=state.get("use_llm", False))
         return {"scenes": scenes, "segments": segments}
 
     graph.add_node("interpret", interpret)

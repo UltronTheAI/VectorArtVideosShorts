@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AspectRatio(str, Enum):
@@ -12,13 +12,26 @@ class AspectRatio(str, Enum):
 
 
 class SceneType(str, Enum):
+    DEVELOPER_SEARCH = "developer_search"
+    FULL_SCAN = "full_scan"
+    INDEX_INTRO = "index_intro"
+    INDEXED_SEARCH = "indexed_search"
+    COMPARISON = "comparison"
+    ENDING = "ending"
     TITLE = "title"
     EXPLAINER = "explainer"
-    DATABASE_SCAN = "database_scan"
-    INDEX_TRAVERSAL = "index_traversal"
-    COMPARISON = "comparison"
     CALLOUT = "callout"
     OUTRO = "outro"
+
+
+SUPPORTED_ENVIRONMENTS = {
+    "developer_desk", "computer_workstation", "database_server_room",
+    "abstract_database_space", "educational_whiteboard", "digital_network", "office_interior",
+}
+SUPPORTED_ACTIONS = {
+    "move", "scale", "rotate", "fade", "bounce", "shake", "blink", "walk", "point",
+    "nod", "celebrate", "frustrated", "surprised", "draw_path", "highlight", "camera_pan", "camera_zoom",
+}
 
 
 class Resolution(BaseModel):
@@ -45,11 +58,20 @@ class TextElement(BaseModel):
 class VisualObject(BaseModel):
     id: str
     kind: str
-    position: Vec2 = Vec2(x=0, y=0)
+    position: Vec2 = Vec2(x=50, y=50)
     size: Vec2 = Vec2(x=100, y=100)
     color: str = "#4CC9F0"
     label: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class CharacterSpec(BaseModel):
+    id: str
+    rig: Literal["human_simple"] = "human_simple"
+    position: Vec2 = Vec2(x=50, y=65)
+    expression: Literal["happy", "confused", "surprised", "angry", "frustrated", "neutral"] = "neutral"
+    scale: float = Field(default=1.0, gt=0.1, le=4)
+    visible: bool = True
 
 
 class AnimationParams(BaseModel):
@@ -57,6 +79,24 @@ class AnimationParams(BaseModel):
     exit: Literal["fade", "slide", "scale", "none"] = "fade"
     emphasis: Literal["none", "shake", "highlight", "bounce", "rotate"] = "none"
     easing: Literal["linear", "ease", "spring"] = "ease"
+
+
+class Action(BaseModel):
+    target: str
+    type: str
+    start_frame: int = Field(ge=0)
+    duration_frames: int = Field(gt=0)
+    easing: Literal["linear", "ease", "spring"] = "ease"
+    from_value: Vec2 | None = None
+    to_value: Vec2 | None = None
+    value: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def supported_type(self) -> "Action":
+        if self.type not in SUPPORTED_ACTIONS:
+            raise ValueError(f"unsupported animation action: {self.type}")
+        return self
 
 
 class CameraParams(BaseModel):
@@ -78,7 +118,10 @@ class NarrationSegment(BaseModel):
     duration_second: float = Field(gt=0)
     audio_path: str | None = None
     emotion: Literal["neutral", "humour", "excitement", "surprise", "frustration"] = "neutral"
+    delivery: Literal["neutral", "energetic", "calm", "urgent", "warm"] = "neutral"
     delivery_speed: float = Field(default=1.0, gt=0.5, le=1.5)
+    pause_after_ms: int = Field(default=0, ge=0, le=3000)
+    voice: Literal["am_michael", "am_adam"] = "am_michael"
 
 
 class Subtitle(BaseModel):
@@ -86,6 +129,7 @@ class Subtitle(BaseModel):
     text: str
     start_frame: int = Field(ge=0)
     end_frame: int = Field(gt=0)
+    emphasis: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def ordered(self) -> "Subtitle":
@@ -100,6 +144,7 @@ class AudioAsset(BaseModel):
     category: str
     tags: list[str] = Field(default_factory=list)
     duration_second: float = Field(default=0, ge=0)
+    content_hash: str = ""
     source_url: str = ""
     author: str = ""
     licence: str = ""
@@ -121,21 +166,31 @@ class Scene(BaseModel):
     start_frame: int = Field(ge=0)
     duration_frames: int = Field(gt=0)
     scene_type: SceneType
+    environment: str = "abstract_database_space"
     background_color: str = "#101828"
     text_elements: list[TextElement] = Field(default_factory=list)
     visual_objects: list[VisualObject] = Field(default_factory=list)
+    characters: list[CharacterSpec] = Field(default_factory=list)
+    actions: list[Action] = Field(default_factory=list)
     animation: AnimationParams = AnimationParams()
     camera: CameraParams = CameraParams()
     narration_segment_ids: list[str] = Field(default_factory=list)
     sound_effect_ids: list[str] = Field(default_factory=list)
     transition: TransitionParams = TransitionParams()
 
+    @model_validator(mode="after")
+    def supported_environment(self) -> "Scene":
+        if self.environment not in SUPPORTED_ENVIRONMENTS:
+            raise ValueError(f"unsupported environment: {self.environment}")
+        return self
+
 
 class NarratorConfig(BaseModel):
-    voice: str = "am_michael"
+    voice: Literal["am_michael", "am_adam"] = "am_michael"
     language: str = "en-US"
     speed: float = Field(default=1.0, gt=0.5, le=1.5)
     model: str = "Kokoro-82M"
+    model_version: str = "82M"
 
 
 class RenderSettings(BaseModel):
@@ -149,7 +204,7 @@ class RenderSettings(BaseModel):
 class Project(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     project_id: str
     title: str
     original_prompt: str
@@ -168,18 +223,9 @@ class Project(BaseModel):
     render: RenderSettings = RenderSettings()
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("actual_duration_second")
-    @classmethod
-    def reasonable_duration(cls, value: float) -> float:
-        if value < 0.1 or value > 180.0:
-            raise ValueError("actual duration must be between 0.1 and 180 seconds")
-        return value
-
     @model_validator(mode="after")
     def validate_timeline(self) -> "Project":
         total_frames = round(self.actual_duration_second * self.fps)
-        if not self.scenes:
-            raise ValueError("at least one scene is required")
         previous_end = 0
         for scene in self.scenes:
             if scene.start_frame < previous_end:
@@ -192,5 +238,7 @@ class Project(BaseModel):
             unknown = set(scene.narration_segment_ids) - known_segments
             if unknown:
                 raise ValueError(f"scene {scene.id} references unknown narration segments: {sorted(unknown)}")
+            for action in scene.actions:
+                if action.start_frame + action.duration_frames > scene.duration_frames:
+                    raise ValueError(f"action {action.target}:{action.type} exceeds scene {scene.id}")
         return self
-

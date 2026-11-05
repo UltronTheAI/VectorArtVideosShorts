@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.schemas import SceneType
+from backend.schemas import SUPPORTED_ENVIRONMENTS, SUPPORTED_ACTIONS, SceneType
 
 ANIMATION_TEMPLATES: tuple[str, ...] = tuple(item.value for item in SceneType)
 PALETTES: dict[str, list[str]] = {
@@ -18,6 +18,18 @@ def list_animation_templates() -> list[str]:
 
 def lookup_palette(name: str = "vectorforge") -> list[str]:
     return PALETTES.get(name, PALETTES["vectorforge"])
+
+
+def list_environments() -> list[str]:
+    return sorted(SUPPORTED_ENVIRONMENTS)
+
+
+def list_animation_actions() -> list[str]:
+    return sorted(SUPPORTED_ACTIONS)
+
+
+def list_character_expressions() -> list[str]:
+    return ["happy", "confused", "surprised", "angry", "frustrated", "neutral"]
 
 
 def validate_scene_parameters(scene: dict[str, Any]) -> tuple[bool, list[str]]:
