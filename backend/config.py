@@ -18,7 +18,8 @@ class Settings:
     tts_lang: str = os.getenv("KOKORO_LANG", "a")
     tts_model: str = os.getenv("KOKORO_MODEL", "Kokoro-82M")
     tts_model_version: str = os.getenv("KOKORO_MODEL_VERSION", "82M")
-    tts_device: str = os.getenv("KOKORO_DEVICE", "cuda")
+    tts_repo_id: str = os.getenv("KOKORO_REPO_ID", "hexgrad/Kokoro-82M")
+    tts_device: str = os.getenv("KOKORO_DEVICE", "auto")
     kokoro_model_dir: str = os.getenv("KOKORO_MODEL_DIR", "")
 
     @property

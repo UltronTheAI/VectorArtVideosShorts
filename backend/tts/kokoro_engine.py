@@ -26,9 +26,10 @@ class KokoroUnavailable(KokoroError):
 
 
 class KokoroEngine:
-    def __init__(self, voice: str | None = None, speed: float | None = None, output_dir: str | Path | None = None):
+    def __init__(self, voice: str | None = None, speed: float | None = None, output_dir: str | Path | None = None, device: str | None = None):
         self.voice = voice or settings.tts_voice
         self.speed = float(speed or settings.tts_speed)
+        self.device = (device or settings.tts_device).lower()
         self.output_dir = Path(output_dir or settings.audio).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         if self.voice not in SUPPORTED_VOICES:
@@ -44,6 +45,26 @@ class KokoroEngine:
     def offline(self) -> bool:
         return os.getenv("KOKORO_OFFLINE", "1").lower() not in {"0", "false", "no"}
 
+    def resolve_device(self) -> str:
+        """Follow the proven Kokoro setup: use CUDA only when PyTorch exposes it."""
+        if self.device in {"auto", "default"}:
+            requested = "auto"
+        else:
+            requested = self.device
+        try:
+            import torch
+            cuda_available = bool(torch.cuda.is_available())
+        except Exception:
+            cuda_available = False
+        if requested == "cuda" and not cuda_available:
+            log.warning("KOKORO_DEVICE=cuda was requested but CUDA is unavailable; using CPU.")
+            return "cpu"
+        if requested == "auto":
+            return "cuda" if cuda_available else "cpu"
+        if requested not in {"cpu", "cuda", "mps"}:
+            raise KokoroError(f"Unsupported KOKORO_DEVICE={self.device!r}; use auto, cpu, cuda, or mps.")
+        return requested
+
     def initialize(self) -> None:
         if not self.available:
             raise KokoroUnavailable(
@@ -58,8 +79,8 @@ class KokoroEngine:
     def _cache_path(self, text: str, pause_after_ms: int = 0, delivery: str = "neutral") -> Path:
         payload = {
             "text": text, "voice": self.voice, "speed": self.speed,
-            "model": settings.tts_model, "model_version": settings.tts_model_version,
-            "lang": settings.tts_lang, "pause_after_ms": pause_after_ms, "delivery": delivery,
+            "model": settings.tts_model, "model_version": settings.tts_model_version, "repo_id": settings.tts_repo_id,
+            "lang": settings.tts_lang, "device": self.resolve_device(), "pause_after_ms": pause_after_ms, "delivery": delivery,
         }
         key = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
         return self.output_dir / f"tts-{key}.wav"
@@ -102,7 +123,7 @@ class KokoroEngine:
                 path.unlink(missing_ok=True)
         try:
             from kokoro import KPipeline
-            pipeline = KPipeline(lang_code=settings.tts_lang, device=settings.tts_device)
+            pipeline = KPipeline(lang_code=settings.tts_lang, repo_id=settings.tts_repo_id, device=self.resolve_device())
             chunks = [audio for _, _, audio in pipeline(prepared, voice=self.voice, speed=self.speed, split_pattern=r"\n+")]
             if not chunks:
                 raise KokoroError("Kokoro returned no audio chunks.")
@@ -123,7 +144,7 @@ class KokoroEngine:
         output: list[dict] = []
         for segment in segments:
             voice = segment.get("voice", self.voice)
-            engine = self if voice == self.voice else KokoroEngine(voice=voice, speed=segment.get("speed", self.speed), output_dir=self.output_dir)
+            engine = self if voice == self.voice else KokoroEngine(voice=voice, speed=segment.get("speed", self.speed), output_dir=self.output_dir, device=self.device)
             path, duration, cached = engine.synthesize(
                 segment["text"], pause_after_ms=int(segment.get("pause_after_ms", 0)),
                 delivery=segment.get("delivery", "neutral"),
