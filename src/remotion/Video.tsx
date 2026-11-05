@@ -1,6 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Sequence, interpolate, useCurrentFrame, useVideoConfig} from 'remotion';
-import {Project, ProjectSchema} from './schemas/project';
+import {ProjectSchema} from './schemas/project';
+import type {Project} from './schemas/project';
 import {Environment} from './components/environments';
 import {
   AnimatedLabel, AnimatedText, BTreeNode, ComparisonPanel, ConnectorPath, DatabaseCylinder, DatabaseTable,

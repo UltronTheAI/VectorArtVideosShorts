@@ -1,6 +1,6 @@
 import React from 'react';
 import {interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {Action} from '../schemas/project';
+import type {Action} from '../schemas/project';
 
 type XY = {x?: number; y?: number};
 type PrimitiveProps = XY & {color?: string; opacity?: number};

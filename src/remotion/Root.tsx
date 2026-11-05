@@ -1,6 +1,8 @@
 import React from 'react';
-import {CalculateMetadataFunction, Composition} from 'remotion';
-import {Project, ProjectPropsSchema} from './schemas/project';
+import {Composition} from 'remotion';
+import type {CalculateMetadataFunction} from 'remotion';
+import {ProjectPropsSchema} from './schemas/project';
+import type {Project} from './schemas/project';
 import {Video} from './Video';
 
 const previewProject: Project = {

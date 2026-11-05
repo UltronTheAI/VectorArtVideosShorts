@@ -69,13 +69,14 @@ def render_project(project_path: str | Path, format_name: str | None = None, pre
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output_dir / ("preview.png" if preview else f"{label}.mp4")
         props = _write_props(project, output_dir / f"remotion-props-{label}.json")
-        command = [npm_runner, "remotion", "still" if preview else "render", "src/remotion/index.ts", "VectorForge", str(output), "--props", str(props)]
+        command = [npm_runner, "remotion", "still" if preview else "render", "src/remotion/index.ts", "VectorForge", str(output), "--props", str(props), "--log=verbose"]
         try:
             result = subprocess.run(command, cwd=settings.root, capture_output=True, text=True, check=False)
         except FileNotFoundError as exc:
             raise RenderError("Node.js and npx are required for Remotion rendering.") from exc
         if result.returncode != 0 or not output.exists():
-            raise RenderError(f"Remotion failed for {label}: {result.stderr[-1800:]}")
+            diagnostic = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+            raise RenderError(f"Remotion failed for {label}:\n{diagnostic[-5000:] or 'Remotion returned no diagnostic output.'}")
         if audio_path:
             _mux_audio(output, audio_path, project)
         outputs.append(output)
